@@ -25,7 +25,7 @@ parser.add_argument('--emsize', type=int, default=300,
                     help='size of word embeddings')
 parser.add_argument('--nhid', type=int, default=300,
                     help='number of hidden units per layer')
-parser.add_argument('--nlayers', type=int, default=1,
+parser.add_argument('--nlayers', type=int, default=2,
                     help='number of layers')
 parser.add_argument('--lr', type=float, default=0.001,
                     help='initial learning rate')
