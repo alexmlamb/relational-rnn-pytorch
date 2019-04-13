@@ -13,6 +13,7 @@ class RNNModel(nn.Module):
         self.encoder = nn.Embedding(ntoken, ninp)
         self.num_blocks = num_blocks
         self.block_size = nhid // self.num_blocks
+        print('number of blocks', self.num_blocks)
         if use_cudnn_version:
             raise Exception('not defined')
             if rnn_type in ['LSTM', 'GRU']:
@@ -106,9 +107,12 @@ class RNNModel(nn.Module):
                     cx = torch.cat(cxl,1)
                     #print(hxl[0].sum(), hx[:,0:100].sum(), hx.reshape((64,3,100))[:,0,:].sum(), 'should be same')
                     #print('hx shape cx shape', hx.shape, cx.shape)
+                    
+                    #TODO: attention turned off
                     hx = hx.reshape((hx.shape[0], self.num_blocks, self.block_size))
                     hx,attn_out = self.mha(hx,hx,hx)
                     hx = hx.reshape((hx.shape[0], self.nhid))
+                    
                     output.append(hx)
                 output = torch.stack(output)
                 if idx_layer + 1 < self.nlayers:

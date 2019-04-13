@@ -39,7 +39,7 @@ parser.add_argument('--bptt', type=int, default=100,
                     help='sequence length')
 parser.add_argument('--dropout', type=float, default=0.5,
                     help='dropout applied to layers (0 = no dropout)')
-parser.add_argument('--tied', action='store_true', default=True,
+parser.add_argument('--tied', default=True, action='store_true',
                     help='tie the word embedding and softmax weights')
 parser.add_argument('--seed', type=int, default=1111,
                     help='random seed')
@@ -69,6 +69,8 @@ parser.add_argument('--name', type=str, default=None,
                     help='name for this experiment. generates folder with the name if specified.')
 
 args = parser.parse_args()
+
+print("Tied?", args.tied)
 
 # Set the random seed manually for reproducibility.
 torch.manual_seed(args.seed)
