@@ -3,6 +3,8 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import random
+from sparse_attn import Sparse_attention
 
 class ScaledDotProductAttention(nn.Module):
     ''' Scaled Dot-Product Attention '''
@@ -12,6 +14,7 @@ class ScaledDotProductAttention(nn.Module):
         self.temperature = temperature
         self.dropout = nn.Dropout(attn_dropout)
         self.softmax = nn.Softmax(dim=2)
+        self.sa = Sparse_attention(top_k=1)
 
     def forward(self, q, k, v, mask=None):
 
@@ -22,7 +25,30 @@ class ScaledDotProductAttention(nn.Module):
             attn = attn.masked_fill(mask, -np.inf)
 
         attn = self.softmax(attn)
-        attn = self.dropout(attn)
+
+        #if random.uniform(0,1) < 0.0001 or attn[0].max() > 0.8:
+        #    print('attn0', attn[0])
+
+        #sparse_attn = attn*0.0
+        #sparse_attn[:,0,0] += 1.0
+        #sparse_attn[:,1,1] += 1.0
+        #sparse_attn[:,2,2] += 1.0
+
+        mb, ins, outs = attn.shape[0], attn.shape[1], attn.shape[2]
+
+        sparse_attn = attn.reshape((mb*ins, outs))
+        #print('sparse attn shape 1', sparse_attn.shape)
+        sparse_attn = self.sa(sparse_attn)
+        #print('sparse attn shape 2', sparse_attn.shape)
+        #print('mb ins outs', mb, ins, outs)
+        sparse_attn = sparse_attn.reshape((mb,ins,outs))
+        #print('sparse attn shape 3', sparse_attn.shape)
+
+        #print('attn', attn[0], sparse_attn[0])
+        attn = sparse_attn*1.0
+        #TODO turned off attention dropout
+
+        #attn = self.dropout(attn)
         output = torch.bmm(attn, v)
 
         return output, attn

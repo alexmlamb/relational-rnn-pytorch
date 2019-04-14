@@ -108,7 +108,7 @@ class RNNModel(nn.Module):
                     #print(hxl[0].sum(), hx[:,0:100].sum(), hx.reshape((64,3,100))[:,0,:].sum(), 'should be same')
                     #print('hx shape cx shape', hx.shape, cx.shape)
                     
-                    #TODO: attention turned off
+                    #TODO: attention turned off if following lines commented
                     hx = hx.reshape((hx.shape[0], self.num_blocks, self.block_size))
                     hx,attn_out = self.mha(hx,hx,hx)
                     hx = hx.reshape((hx.shape[0], self.nhid))
