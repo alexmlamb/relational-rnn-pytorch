@@ -238,7 +238,7 @@ def evaluate(data_source):
     with torch.no_grad():
         for i in range(0, data_source.size(0) - 1, args.bptt):
             data, targets = get_batch(data_source, i)
-            output, hidden = model(data, hidden)
+            output, hidden,extra_loss = model(data, hidden)
             if not args.adaptivesoftmax:
                 loss = criterion(output.view(-1, ntokens), targets)
             else:
@@ -269,7 +269,7 @@ def train():
         hidden = repackage_hidden(hidden)
         model.zero_grad()
 
-        output, hidden = model(data, hidden)
+        output, hidden, extra_loss = model(data, hidden)
         if not args.adaptivesoftmax:
             loss = criterion(output.view(-1, ntokens), targets)
         else:
@@ -282,7 +282,7 @@ def train():
         forward_elapsed = time.time() - forward_start_time
         forward_elapsed_time += forward_elapsed
 
-        loss.backward()
+        (loss + extra_loss).backward()
 
         # `clip_grad_norm` helps prevent the exploding gradient problem in RNNs / LSTMs.
         torch.nn.utils.clip_grad_norm_(model.parameters(), args.clip)

@@ -26,7 +26,8 @@ class RNNModel(nn.Module):
                                      options are ['LSTM', 'GRU', 'RNN_TANH' or 'RNN_RELU']""")
                 self.rnn = nn.RNN(ninp, nhid, nlayers, nonlinearity=nonlinearity, dropout=dropout)
         else:
-            self.mha = MultiHeadAttention(n_head=1, d_model=self.block_size, d_k=16, d_v=16)
+            #tried reducing size
+            self.mha = MultiHeadAttention(n_head=4, d_model=self.block_size, d_k=16, d_v=16)
             if rnn_type in ['LSTM', 'GRU']:
                 rnn_type = str(rnn_type) + 'Cell'
                 rnn_modulelist = []
@@ -82,6 +83,9 @@ class RNNModel(nn.Module):
             self.decoder.weight.data.uniform_(-initrange, initrange)
 
     def forward(self, input, hidden):
+
+        extra_loss = 0.0
+
         emb = self.drop(self.encoder(input))
         if self.use_cudnn_version:
             output, hidden = self.rnn(emb, hidden)
@@ -110,9 +114,10 @@ class RNNModel(nn.Module):
                     
                     #TODO: attention turned off if following lines commented
                     hx = hx.reshape((hx.shape[0], self.num_blocks, self.block_size))
-                    hx,attn_out = self.mha(hx,hx,hx)
+                    hx,attn_out,extra_loss_att = self.mha(hx,hx,hx)
                     hx = hx.reshape((hx.shape[0], self.nhid))
-                    
+                    extra_loss += extra_loss_att
+
                     output.append(hx)
                 output = torch.stack(output)
                 if idx_layer + 1 < self.nlayers:
@@ -126,12 +131,14 @@ class RNNModel(nn.Module):
 
         output = self.drop(output)
 
+        
+
         if not self.use_adaptive_softmax:
             decoded = self.decoder(output.view(output.size(0) * output.size(1), output.size(2)))
-            return decoded.view(output.size(0), output.size(1), decoded.size(1)), hidden
+            return decoded.view(output.size(0), output.size(1), decoded.size(1)), hidden, extra_loss
         else:
             decoded = self.decoder_adaptive(output.view(output.size(0) * output.size(1), output.size(2)))
-            return decoded.view(output.size(0), output.size(1), decoded.size(1)), hidden
+            return decoded.view(output.size(0), output.size(1), decoded.size(1)), hidden, extra_loss
 
     def init_hidden(self, bsz):
         weight = next(self.parameters())

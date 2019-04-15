@@ -5,6 +5,7 @@ import torch.nn as nn
 import numpy as np
 import random
 from sparse_attn import Sparse_attention
+import torch.nn.functional as F
 
 class ScaledDotProductAttention(nn.Module):
     ''' Scaled Dot-Product Attention '''
@@ -12,7 +13,7 @@ class ScaledDotProductAttention(nn.Module):
     def __init__(self, temperature, attn_dropout=0.1):
         super().__init__()
         self.temperature = temperature
-        self.dropout = nn.Dropout(attn_dropout)
+        #self.dropout = nn.Dropout(attn_dropout)
         self.softmax = nn.Softmax(dim=2)
         self.sa = Sparse_attention(top_k=1)
 
@@ -24,8 +25,8 @@ class ScaledDotProductAttention(nn.Module):
         if mask is not None:
             attn = attn.masked_fill(mask, -np.inf)
 
+        #attn = self.dropout(attn)
         attn = self.softmax(attn)
-
         #if random.uniform(0,1) < 0.0001 or attn[0].max() > 0.8:
         #    print('attn0', attn[0])
 
@@ -33,25 +34,27 @@ class ScaledDotProductAttention(nn.Module):
         #sparse_attn[:,0,0] += 1.0
         #sparse_attn[:,1,1] += 1.0
         #sparse_attn[:,2,2] += 1.0
+        #attn = sparse_attn*1.0
 
-        mb, ins, outs = attn.shape[0], attn.shape[1], attn.shape[2]
+        #extra_loss = 0.0
+        #for k in range(0,3):
+        #    extra_loss += 0.0001 * ((attn[:,k,k] - 1.0)**2).sum()
+        extra_loss = 0.0
 
-        sparse_attn = attn.reshape((mb*ins, outs))
-        #print('sparse attn shape 1', sparse_attn.shape)
-        sparse_attn = self.sa(sparse_attn)
-        #print('sparse attn shape 2', sparse_attn.shape)
-        #print('mb ins outs', mb, ins, outs)
-        sparse_attn = sparse_attn.reshape((mb,ins,outs))
-        #print('sparse attn shape 3', sparse_attn.shape)
+        use_sparse = False
 
-        #print('attn', attn[0], sparse_attn[0])
-        attn = sparse_attn*1.0
-        #TODO turned off attention dropout
+        if use_sparse:
+            mb, ins, outs = attn.shape[0], attn.shape[1], attn.shape[2]
+            sparse_attn = attn.reshape((mb*ins, outs))
+            #print('sparse attn shape 1', sparse_attn.shape)
+            sparse_attn = self.sa(sparse_attn)
+            sparse_attn = sparse_attn.reshape((mb,ins,outs))
+            attn = sparse_attn*1.0
 
         #attn = self.dropout(attn)
         output = torch.bmm(attn, v)
 
-        return output, attn
+        return output, attn, extra_loss
 
 import torch.nn.functional as F
 
@@ -75,6 +78,7 @@ class MultiHeadAttention(nn.Module):
         self.attention = ScaledDotProductAttention(temperature=np.power(d_k, 0.5))
         self.layer_norm = nn.LayerNorm(d_model)
 
+        self.gate_fc = nn.Linear(n_head * d_v, d_model)
         self.fc = nn.Linear(n_head * d_v, d_model)
         nn.init.xavier_normal_(self.fc.weight)
 
@@ -85,6 +89,7 @@ class MultiHeadAttention(nn.Module):
 
         d_k, d_v, n_head = self.d_k, self.d_v, self.n_head
 
+
         sz_b, len_q, _ = q.size()
         sz_b, len_k, _ = k.size()
         sz_b, len_v, _ = v.size()
@@ -94,21 +99,39 @@ class MultiHeadAttention(nn.Module):
         q = self.w_qs(q).view(sz_b, len_q, n_head, d_k)
         k = self.w_ks(k).view(sz_b, len_k, n_head, d_k)
         v = self.w_vs(v).view(sz_b, len_v, n_head, d_v)
+        #v = v.view(sz_b, len_v, n_head, d_v)
 
         q = q.permute(2, 0, 1, 3).contiguous().view(-1, len_q, d_k) # (n*b) x lq x dk
         k = k.permute(2, 0, 1, 3).contiguous().view(-1, len_k, d_k) # (n*b) x lk x dk
         v = v.permute(2, 0, 1, 3).contiguous().view(-1, len_v, d_v) # (n*b) x lv x dv
 
         #mask = mask.repeat(n_head, 1, 1) # (n*b) x .. x ..
-        output, attn = self.attention(q, k, v, mask=None)
+        output, attn, extra_loss = self.attention(q, k, v, mask=None)
 
         output = output.view(n_head, sz_b, len_q, d_v)
         output = output.permute(1, 2, 0, 3).contiguous().view(sz_b, len_q, -1) # b x lq x (n*dv)
 
-        output = self.dropout(self.fc(output))
-        output = self.layer_norm(output + residual)
+        #print('output shape before fc', output.shape)
 
-        return output, attn
+        #TODO: probably shouldn't just apply residual layer in the forward pass.  
+
+        output_init = output*1.0
+
+        output = self.dropout(self.fc(output_init))
+
+        gate = F.sigmoid(self.gate_fc(output_init))
+
+        #output = self.layer_norm(gate * output + (1 - gate) * residual)
+        #output = gate * output + (1 - gate) * residual
+
+        output = residual + gate * F.tanh(output)
+
+        #output
+
+        #print('attn', attn[0])
+        #print('output input diff', output - residual)
+
+        return output, attn, extra_loss
 
 class PositionwiseFeedForward(nn.Module):
     ''' A two-feed-forward-layer module '''
