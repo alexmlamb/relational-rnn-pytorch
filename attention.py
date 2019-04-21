@@ -15,7 +15,8 @@ class ScaledDotProductAttention(nn.Module):
         self.temperature = temperature
         #self.dropout = nn.Dropout(attn_dropout)
         self.softmax = nn.Softmax(dim=2)
-        self.sa = Sparse_attention(top_k=1)
+        #print('top 2 sparsity')
+        #self.sa = Sparse_attention(top_k=2)
 
     def forward(self, q, k, v, mask=None):
 
@@ -50,6 +51,8 @@ class ScaledDotProductAttention(nn.Module):
             sparse_attn = self.sa(sparse_attn)
             sparse_attn = sparse_attn.reshape((mb,ins,outs))
             attn = sparse_attn*1.0
+
+        #print('attention 0', attn[0])
 
         #attn = self.dropout(attn)
         output = torch.bmm(attn, v)
@@ -87,8 +90,9 @@ class MultiHeadAttention(nn.Module):
 
     def forward(self, q, k, v, mask=None):
 
-        d_k, d_v, n_head = self.d_k, self.d_v, self.n_head
+        print('attn input shape', q.shape)
 
+        d_k, d_v, n_head = self.d_k, self.d_v, self.n_head
 
         sz_b, len_q, _ = q.size()
         sz_b, len_k, _ = k.size()

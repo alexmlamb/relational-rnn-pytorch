@@ -6,10 +6,11 @@ class RNNModel(nn.Module):
     """Container module with an encoder, a recurrent module, and a decoder."""
 
     def __init__(self, rnn_type, ntoken, ninp, nhid, nlayers, dropout=0.5, tie_weights=False, use_cudnn_version=True,
-                 use_adaptive_softmax=False, cutoffs=None, num_blocks=3):
+                 use_adaptive_softmax=False, cutoffs=None, num_blocks=4):
         super(RNNModel, self).__init__()
         self.use_cudnn_version = use_cudnn_version
         self.drop = nn.Dropout(dropout)
+        print('number of inputs, ninp', ninp)
         self.encoder = nn.Embedding(ntoken, ninp)
         self.num_blocks = num_blocks
         self.block_size = nhid // self.num_blocks
@@ -57,6 +58,7 @@ class RNNModel(nn.Module):
             # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
             # https://arxiv.org/abs/1611.01462
             if tie_weights:
+                print('tying weights!')
                 if nhid != ninp:
                     raise ValueError('When using the tied flag, nhid must be equal to emsize')
                 self.decoder.weight = self.encoder.weight
@@ -134,6 +136,7 @@ class RNNModel(nn.Module):
         
 
         if not self.use_adaptive_softmax:
+            print('not use adaptive softmax, size going into decoder', output.size())
             decoded = self.decoder(output.view(output.size(0) * output.size(1), output.size(2)))
             return decoded.view(output.size(0), output.size(1), decoded.size(1)), hidden, extra_loss
         else:
