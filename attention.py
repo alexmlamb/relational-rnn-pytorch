@@ -88,9 +88,9 @@ class MultiHeadAttention(nn.Module):
         self.dropout = nn.Dropout(dropout)
 
 
-    def forward(self, q, k, v, mask=None):
+    def forward(self, q, k, v, mask=None, skip_connection=True):
 
-        print('attn input shape', q.shape)
+        #print('attn input shape', q.shape)
 
         d_k, d_v, n_head = self.d_k, self.d_v, self.n_head
 
@@ -123,12 +123,10 @@ class MultiHeadAttention(nn.Module):
 
         output = self.dropout(self.fc(output_init))
 
-        gate = F.sigmoid(self.gate_fc(output_init))
 
-        #output = self.layer_norm(gate * output + (1 - gate) * residual)
-        #output = gate * output + (1 - gate) * residual
-
-        output = residual + gate * F.tanh(output)
+        if skip_connection:
+            gate = F.sigmoid(self.gate_fc(output_init))
+            output = residual + gate * F.tanh(output)
 
         #output
 

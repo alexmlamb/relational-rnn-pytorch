@@ -10,6 +10,8 @@ class RNNModel(nn.Module):
         super(RNNModel, self).__init__()
         self.use_cudnn_version = use_cudnn_version
         self.drop = nn.Dropout(dropout)
+        self.num_blocks = num_blocks
+        self.block_size = nhid // self.num_blocks
         print('number of inputs, ninp', ninp)
         self.encoder = nn.Embedding(ntoken, ninp)
         self.num_blocks = num_blocks
@@ -28,7 +30,15 @@ class RNNModel(nn.Module):
                 self.rnn = nn.RNN(ninp, nhid, nlayers, nonlinearity=nonlinearity, dropout=dropout)
         else:
             #tried reducing size
-            self.mha = MultiHeadAttention(n_head=4, d_model=self.block_size, d_k=16, d_v=16)
+            mha_lst = []
+            mha_lst.append(MultiHeadAttention(n_head=4, d_model=self.block_size, d_k=16, d_v=16))
+            mha_lst.append(MultiHeadAttention(n_head=4, d_model=self.block_size, d_k=16, d_v=16))
+            self.mha = nn.ModuleList(mha_lst)
+
+            self.inp_mha = nn.ModuleList([MultiHeadAttention(n_head=4, d_model=self.block_size, d_k=self.block_size, d_v=self.block_size)])
+
+            self.output_mha = MultiHeadAttention(n_head=4, d_model=self.block_size, d_k=64, d_v=self.block_size)
+
             if rnn_type in ['LSTM', 'GRU']:
                 rnn_type = str(rnn_type) + 'Cell'
                 rnn_modulelist = []
@@ -36,7 +46,11 @@ class RNNModel(nn.Module):
                 for i in range(nlayers):
                     blocklst = []
                     for block in range(num_blocks):
-                        blocklst.append(getattr(nn, rnn_type)(ninp, nhid//num_blocks))
+                        if i == 0:
+                            num_inp_2_blocks = self.block_size
+                        else:
+                            num_inp_2_blocks = self.block_size
+                        blocklst.append(getattr(nn, rnn_type)(num_inp_2_blocks, nhid//num_blocks))
                     blocklst = nn.ModuleList(blocklst)
                     rnn_modulelist.append(blocklst)
                     dropout_lst.append(nn.Dropout(dropout))
@@ -103,25 +117,45 @@ class RNNModel(nn.Module):
                 for idx_step in range(input.shape[0]):
                     hxl = []
                     cxl = []
+
+                    #use hx to attend over layer_input, to get "attended layer input", which is of size block_size.  
+
+                    #print('layer', idx_layer, 'layer input shape', layer_input[idx_step].shape)
+                    #print('hx shape', hx.shape)
+
+                    if idx_layer == 0:
+                        inp_use = layer_input[idx_step]
+                    else:
+                        hx_reshape = hx.reshape((hx.shape[0], self.num_blocks, self.block_size))
+                        inp_reshape = layer_input[idx_step].reshape((layer_input.shape[1], self.num_blocks, self.block_size))
+                        inp_use,_,_ = self.inp_mha[idx_layer-1](q=hx_reshape, k=inp_reshape, v=inp_reshape, skip_connection=False)
+                        #print('inp use shape', inp_use.shape)
+
                     for block in range(self.num_blocks):
                         #print('block', block)
-                        
-                        hx_b, cx_b = self.rnn[idx_layer][block](layer_input[idx_step], (hx[:,block*self.block_size : (block+1)*self.block_size], cx[:,block*self.block_size : (block+1)*self.block_size]))
+                        hx_block = hx[:,block*self.block_size : (block+1)*self.block_size]
+                        cx_block = cx[:,block*self.block_size : (block+1)*self.block_size]
+                        if idx_layer == 0:
+                            inp_use_block = inp_use[:,block*self.block_size : (block+1)*self.block_size]
+                        else:
+                            inp_use_block = inp_use[:,block,:]
+                        hx_b, cx_b = self.rnn[idx_layer][block](inp_use_block, (hx_block, cx_block))
                         hxl.append(hx_b)
                         cxl.append(cx_b)
+                    
                     hx = torch.cat(hxl,1)
                     cx = torch.cat(cxl,1)
                     #print(hxl[0].sum(), hx[:,0:100].sum(), hx.reshape((64,3,100))[:,0,:].sum(), 'should be same')
                     #print('hx shape cx shape', hx.shape, cx.shape)
                     
-                    #TODO: attention turned off if following lines commented
                     hx = hx.reshape((hx.shape[0], self.num_blocks, self.block_size))
-                    hx,attn_out,extra_loss_att = self.mha(hx,hx,hx)
+                    hx,attn_out,extra_loss_att = self.mha[idx_layer](hx,hx,hx)
                     hx = hx.reshape((hx.shape[0], self.nhid))
                     extra_loss += extra_loss_att
-
                     output.append(hx)
-                output = torch.stack(output)
+
+                output = torch.stack(output) #stack over sequence length
+
                 if idx_layer + 1 < self.nlayers:
                     output = self.dropout_lst[idx_layer](output)
                 layer_input = output
@@ -136,7 +170,9 @@ class RNNModel(nn.Module):
         
 
         if not self.use_adaptive_softmax:
-            print('not use adaptive softmax, size going into decoder', output.size())
+            #print('not use adaptive softmax, size going into decoder', output.size())
+            #output = output.reshape((output.size(0), output.size(1), self.num_blocks, self.block_size))
+            #output = torch.mean(output, dim=2)
             decoded = self.decoder(output.view(output.size(0) * output.size(1), output.size(2)))
             return decoded.view(output.size(0), output.size(1), decoded.size(1)), hidden, extra_loss
         else:
