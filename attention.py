@@ -90,7 +90,7 @@ class MultiHeadAttention(nn.Module):
 
     def forward(self, q, k, v, mask=None):
 
-        print('attn input shape', q.shape)
+        #print('attn input shape', q.shape)
 
         d_k, d_v, n_head = self.d_k, self.d_v, self.n_head
 

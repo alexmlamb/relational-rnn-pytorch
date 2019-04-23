@@ -1,6 +1,7 @@
 import torch.nn as nn
 import torch
 from attention import MultiHeadAttention
+from layer_conn_attention import LayerConnAttention
 
 class RNNModel(nn.Module):
     """Container module with an encoder, a recurrent module, and a decoder."""
@@ -13,6 +14,7 @@ class RNNModel(nn.Module):
         print('number of inputs, ninp', ninp)
         self.encoder = nn.Embedding(ntoken, ninp)
         self.num_blocks = num_blocks
+        self.nhid = nhid
         self.block_size = nhid // self.num_blocks
         print('number of blocks', self.num_blocks)
         if use_cudnn_version:
@@ -29,6 +31,8 @@ class RNNModel(nn.Module):
         else:
             #tried reducing size
             self.mha = MultiHeadAttention(n_head=4, d_model=self.block_size, d_k=16, d_v=16)
+            self.layer_conn_att = LayerConnAttention(n_head=8, d_model=self.block_size, d_k=self.block_size, d_v=self.block_size, d_out=nhid*2)
+
             if rnn_type in ['LSTM', 'GRU']:
                 rnn_type = str(rnn_type) + 'Cell'
                 rnn_modulelist = []
@@ -36,7 +40,10 @@ class RNNModel(nn.Module):
                 for i in range(nlayers):
                     blocklst = []
                     for block in range(num_blocks):
-                        blocklst.append(getattr(nn, rnn_type)(ninp, nhid//num_blocks))
+                        if i == 0:
+                            blocklst.append(getattr(nn, rnn_type)(ninp, nhid//num_blocks))
+                        else:
+                            blocklst.append(getattr(nn, rnn_type)(ninp*2, nhid//num_blocks))
                     blocklst = nn.ModuleList(blocklst)
                     rnn_modulelist.append(blocklst)
                     dropout_lst.append(nn.Dropout(dropout))
@@ -103,10 +110,29 @@ class RNNModel(nn.Module):
                 for idx_step in range(input.shape[0]):
                     hxl = []
                     cxl = []
+
+                    if idx_layer == 0:
+                        inp_use = layer_input[idx_step]
+                    else:
+                        #inp_use = layer_input[idx_step]#[:,block*self.block_size : (block+1)*self.block_size]
+                        inp_use = layer_input[idx_step]
+                        inp_use = inp_use.reshape((inp_use.shape[0], self.num_blocks, self.block_size))
+                        inp_use,_,_ = self.layer_conn_att(hx.reshape((hx.shape[0], self.num_blocks, self.block_size)), inp_use, inp_use)
+                        #print('inp use shape', inp_use.shape)
+                        inp_use = inp_use.reshape((inp_use.shape[0], self.nhid*self.num_blocks*2))
+
                     for block in range(self.num_blocks):
                         #print('block', block)
                         
-                        hx_b, cx_b = self.rnn[idx_layer][block](layer_input[idx_step], (hx[:,block*self.block_size : (block+1)*self.block_size], cx[:,block*self.block_size : (block+1)*self.block_size]))
+                        #print('layer input size', layer_input[idx_step].shape)
+
+                        if idx_layer == 0:
+                            inp_use_block = inp_use
+                        else:
+                            #print('inp use shape', inp_use.shape)
+                            inp_use_block = inp_use[:,block*self.nhid*2 : (block+1)*self.nhid*2]
+
+                        hx_b, cx_b = self.rnn[idx_layer][block](inp_use_block, (hx[:,block*self.block_size : (block+1)*self.block_size], cx[:,block*self.block_size : (block+1)*self.block_size]))
                         hxl.append(hx_b)
                         cxl.append(cx_b)
                     hx = torch.cat(hxl,1)
@@ -136,7 +162,7 @@ class RNNModel(nn.Module):
         
 
         if not self.use_adaptive_softmax:
-            print('not use adaptive softmax, size going into decoder', output.size())
+            #print('not use adaptive softmax, size going into decoder', output.size())
             decoded = self.decoder(output.view(output.size(0) * output.size(1), output.size(2)))
             return decoded.view(output.size(0), output.size(1), decoded.size(1)), hidden, extra_loss
         else:
