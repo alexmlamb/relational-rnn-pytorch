@@ -1,24 +1,18 @@
+
 import torch.nn as nn
 import torch
-from attention import MultiHeadAttention
-from layer_conn_attention import LayerConnAttention
+
 
 class RNNModel(nn.Module):
     """Container module with an encoder, a recurrent module, and a decoder."""
 
     def __init__(self, rnn_type, ntoken, ninp, nhid, nlayers, dropout=0.5, tie_weights=False, use_cudnn_version=True,
-                 use_adaptive_softmax=False, cutoffs=None, num_blocks=4):
+                 use_adaptive_softmax=False, cutoffs=None):
         super(RNNModel, self).__init__()
         self.use_cudnn_version = use_cudnn_version
         self.drop = nn.Dropout(dropout)
-        print('number of inputs, ninp', ninp)
         self.encoder = nn.Embedding(ntoken, ninp)
-        self.num_blocks = num_blocks
-        self.nhid = nhid
-        self.block_size = nhid // self.num_blocks
-        print('number of blocks', self.num_blocks)
         if use_cudnn_version:
-            raise Exception('not defined')
             if rnn_type in ['LSTM', 'GRU']:
                 self.rnn = getattr(nn, rnn_type)(ninp, nhid, nlayers, dropout=dropout)
             else:
@@ -29,30 +23,14 @@ class RNNModel(nn.Module):
                                      options are ['LSTM', 'GRU', 'RNN_TANH' or 'RNN_RELU']""")
                 self.rnn = nn.RNN(ninp, nhid, nlayers, nonlinearity=nonlinearity, dropout=dropout)
         else:
-            #tried reducing size
-            self.mha = MultiHeadAttention(n_head=4, d_model=self.block_size, d_k=16, d_v=16)
-            self.fan_in = 2
-            self.layer_conn_att = LayerConnAttention(n_head=4*self.fan_in, d_model=self.block_size, d_k=self.block_size, d_v=self.block_size, d_out=nhid*self.fan_in)
-
             if rnn_type in ['LSTM', 'GRU']:
                 rnn_type = str(rnn_type) + 'Cell'
                 rnn_modulelist = []
-                dropout_lst = []
                 for i in range(nlayers):
-                    blocklst = []
-                    for block in range(num_blocks):
-                        if i == 0:
-                            blocklst.append(getattr(nn, rnn_type)(ninp, nhid//num_blocks))
-                        else:
-                            blocklst.append(getattr(nn, rnn_type)(ninp*self.fan_in + self.block_size, nhid//num_blocks))
-                    blocklst = nn.ModuleList(blocklst)
-                    rnn_modulelist.append(blocklst)
-                    dropout_lst.append(nn.Dropout(dropout))
-
-                print('number of layers', nlayers)
-                print('number of modules', len(rnn_modulelist))
+                    rnn_modulelist.append(getattr(nn, rnn_type)(ninp, nhid))
+                    if i < nlayers - 1:
+                        rnn_modulelist.append(nn.Dropout(dropout))
                 self.rnn = nn.ModuleList(rnn_modulelist)
-                self.dropout_lst = nn.ModuleList(dropout_lst)
             else:
                 raise ValueError("non-cudnn version of (RNNCell) is not implemented. use LSTM or GRU instead")
 
@@ -66,7 +44,6 @@ class RNNModel(nn.Module):
             # "Tying Word Vectors and Word Classifiers: A Loss Framework for Language Modeling" (Inan et al. 2016)
             # https://arxiv.org/abs/1611.01462
             if tie_weights:
-                print('tying weights!')
                 if nhid != ninp:
                     raise ValueError('When using the tied flag, nhid must be equal to emsize')
                 self.decoder.weight = self.encoder.weight
@@ -93,9 +70,6 @@ class RNNModel(nn.Module):
             self.decoder.weight.data.uniform_(-initrange, initrange)
 
     def forward(self, input, hidden):
-
-        extra_loss = 0.0
-
         emb = self.drop(self.encoder(input))
         if self.use_cudnn_version:
             output, hidden = self.rnn(emb, hidden)
@@ -103,54 +77,15 @@ class RNNModel(nn.Module):
             # for loop implementation with RNNCell
             layer_input = emb
             new_hidden = [[], []]
-            for idx_layer in range(0, self.nlayers):
-                #print('idx layer', idx_layer)
+            for idx_layer in range(0, self.nlayers + 1, 2):
                 output = []
-                #print('hidden shape', hidden[0].shape)
-                hx, cx = hidden[0][idx_layer], hidden[1][idx_layer]
+                hx, cx = hidden[0][int(idx_layer / 2)], hidden[1][int(idx_layer / 2)]
                 for idx_step in range(input.shape[0]):
-                    hxl = []
-                    cxl = []
-
-                    if idx_layer == 0:
-                        inp_use = layer_input[idx_step]
-                    else:
-                        #inp_use = layer_input[idx_step]#[:,block*self.block_size : (block+1)*self.block_size]
-                        inp_use = layer_input[idx_step]
-                        inp_use = inp_use.reshape((inp_use.shape[0], self.num_blocks, self.block_size))
-                        inp_use,_,_ = self.layer_conn_att(hx.reshape((hx.shape[0], self.num_blocks, self.block_size)), inp_use, inp_use)
-                        #print('inp use shape', inp_use.shape)
-                        inp_use = inp_use.reshape((inp_use.shape[0], self.nhid*self.num_blocks*self.fan_in))
-
-                    for block in range(self.num_blocks):
-                        #print('block', block)
-                        
-                        #print('layer input size', layer_input[idx_step].shape)
-
-                        if idx_layer == 0:
-                            inp_use_block = inp_use
-                        else:
-                            #print('inp use shape', inp_use.shape)
-                            inp_use_block = torch.cat([inp_use[:,block*self.nhid*self.fan_in : (block+1)*self.nhid*self.fan_in],layer_input[idx_step][:,block*self.block_size : (block+1)*self.block_size]], dim=1)
-
-                        hx_b, cx_b = self.rnn[idx_layer][block](inp_use_block, (hx[:,block*self.block_size : (block+1)*self.block_size], cx[:,block*self.block_size : (block+1)*self.block_size]))
-                        hxl.append(hx_b)
-                        cxl.append(cx_b)
-                    hx = torch.cat(hxl,1)
-                    cx = torch.cat(cxl,1)
-                    #print(hxl[0].sum(), hx[:,0:100].sum(), hx.reshape((64,3,100))[:,0,:].sum(), 'should be same')
-                    #print('hx shape cx shape', hx.shape, cx.shape)
-                    
-                    #TODO: attention turned off if following lines commented
-                    hx = hx.reshape((hx.shape[0], self.num_blocks, self.block_size))
-                    hx,attn_out,extra_loss_att = self.mha(hx,hx,hx)
-                    hx = hx.reshape((hx.shape[0], self.nhid))
-                    extra_loss += extra_loss_att
-
+                    hx, cx = self.rnn[idx_layer](layer_input[idx_step], (hx, cx))
                     output.append(hx)
                 output = torch.stack(output)
                 if idx_layer + 1 < self.nlayers:
-                    output = self.dropout_lst[idx_layer](output)
+                    output = self.rnn[idx_layer + 1](output)
                 layer_input = output
                 new_hidden[0].append(hx)
                 new_hidden[1].append(cx)
@@ -160,15 +95,12 @@ class RNNModel(nn.Module):
 
         output = self.drop(output)
 
-        
-
         if not self.use_adaptive_softmax:
-            #print('not use adaptive softmax, size going into decoder', output.size())
             decoded = self.decoder(output.view(output.size(0) * output.size(1), output.size(2)))
-            return decoded.view(output.size(0), output.size(1), decoded.size(1)), hidden, extra_loss
+            return decoded.view(output.size(0), output.size(1), decoded.size(1)), hidden, 0.0
         else:
             decoded = self.decoder_adaptive(output.view(output.size(0) * output.size(1), output.size(2)))
-            return decoded.view(output.size(0), output.size(1), decoded.size(1)), hidden, extra_loss
+            return decoded.view(output.size(0), output.size(1), decoded.size(1)), hidden, 0.0
 
     def init_hidden(self, bsz):
         weight = next(self.parameters())
@@ -177,3 +109,4 @@ class RNNModel(nn.Module):
                     weight.new_zeros(self.nlayers, bsz, self.nhid))
         else:
             return weight.new_zeros(self.nlayers, bsz, self.nhid)
+

@@ -11,6 +11,7 @@ import shutil
 import pickle
 import data
 import rnn_models
+import baseline_lstm_model
 
 # is it faster?
 torch.backends.cudnn.benchmark = True
@@ -55,6 +56,7 @@ parser.add_argument('--onnx-export', type=str, default='',
                     help='path to export the final model in onnx format')
 parser.add_argument('--resume', type=int, default=None,
                     help='if specified with the 1-indexed global epoch, loads the checkpoint and resumes training')
+parser.add_argument('--algo', type=str, choices=('blocks', 'lstm'))
 
 # parameters for adaptive softmax
 parser.add_argument('--adaptivesoftmax', action='store_true',
@@ -162,7 +164,15 @@ if args.adaptivesoftmax:
 else:
     criterion = nn.CrossEntropyLoss()
 
-model = rnn_models.RNNModel(args.model, ntokens, args.emsize, args.nhid,
+
+if args.algo == "blocks": 
+    rnn_mod = rnn_models.RNNModel
+elif args.algo == "lstm":
+    rnn_mod = baseline_lstm_model.RNNModel
+else:
+    raise Exception("Algorithm option not found")
+
+model = rnn_mod(args.model, ntokens, args.emsize, args.nhid,
                             args.nlayers, args.dropout, args.tied,
                             use_cudnn_version=args.cudnn, use_adaptive_softmax=args.adaptivesoftmax,
                             cutoffs=args.cutoffs).to(device)

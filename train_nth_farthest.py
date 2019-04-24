@@ -186,7 +186,7 @@ test_hist_acc = np.zeros(num_epochs)
 
 
 def accuracy_score(y_pred, y_true):
-    return np.array(y_pred == y_true).sum() * 1.0 / len(y_true)
+    return np.array((y_pred == y_true).cpu()).sum() * 1.0 / len(y_true)
 
 
 ####################
