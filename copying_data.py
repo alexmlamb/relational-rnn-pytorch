@@ -13,12 +13,11 @@ def copying_data(T, n_data, n_sequence, batch_size):
     y = y.reshape(y.shape[0] // batch_size, batch_size, y.shape[1])
     return x, y
 
-T = 40
-n_train = 20
-n_test = 20
+T = 80
+n_train = 640
+n_test = 640
 n_sequence = 10
-batch_size = 2
-
+batch_size = 64
 
 if __name__ == "__main__":
     train_x, train_y = copying_data(T, n_train, n_sequence,batch_size)
@@ -31,4 +30,6 @@ if __name__ == "__main__":
         print(train_x[0,j])
         print(train_y[0,j])
     
+
+
 
