@@ -12,6 +12,10 @@ import pickle
 import data
 import rnn_models
 import baseline_lstm_model
+import random
+
+from copying_data import copying_data
+from torch.autograd import Variable
 
 # is it faster?
 torch.backends.cudnn.benchmark = True
@@ -153,7 +157,7 @@ savepath = os.path.join(os.getcwd(), folder_name)
 # Build the model
 ###############################################################################
 
-ntokens = len(corpus.dictionary)
+ntokens = 20#len(corpus.dictionary)
 print("vocabulary size (ntokens): " + str(ntokens))
 if args.adaptivesoftmax:
     print("Adaptive Softmax is on: the performance depends on cutoff values. check if the cutoff is properly set")
@@ -243,8 +247,9 @@ def evaluate(data_source):
     # Turn on evaluation mode which disables dropout.
     model.eval()
     total_loss = 0.
-    ntokens = len(corpus.dictionary)
+    ntokens = 20#len(corpus.dictionary)
     hidden = model.init_hidden(eval_batch_size)
+    print('eval data source shape', data_source.shape)
     with torch.no_grad():
         for i in range(0, data_source.size(0) - 1, args.bptt):
             data, targets = get_batch(data_source, i)
@@ -264,10 +269,18 @@ def train():
     total_loss = 0.
     forward_elapsed_time = 0.
     start_time = time.time()
-    ntokens = len(corpus.dictionary)
+    ntokens = 20#len(corpus.dictionary)
     hidden = model.init_hidden(args.batch_size)
-    for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
-        data, targets = get_batch(train_data, i)
+
+    copy_x, copy_y = copying_data()
+    num_batches = 200
+
+    for i in range(num_batches):
+        batch_ind = random.randint(0, num_batches-1)
+
+        #data, targets = get_batch(train_data, i)
+        data = Variable(torch.from_numpy(copy_x[batch_ind]).cuda())
+        targets = Variable(torch.from_numpy(copy_y[batch_ind]).cuda())
 
         #print('input shape', data.shape)
         # synchronize cuda for a proper speed benchmark
@@ -282,9 +295,11 @@ def train():
 
         output, hidden, extra_loss = model(data, hidden)
         if not args.adaptivesoftmax:
-            #print('getting loss for output', output.shape, 'target shape', targets.shape)
-            loss = criterion(output.view(-1, ntokens), targets)
+            print('getting loss for output', output.shape, 'target shape', targets.shape)
+            print('ntokens', ntokens)
+            loss = criterion(output.view(-1, ntokens), targets.view(100*64))
         else:
+            raise Exception('not implemented')
             _, loss = criterion_adaptive(output.view(-1, args.nhid), targets)
         total_loss += loss.item()
 
@@ -301,11 +316,11 @@ def train():
 
         optimizer.step()
 
-        if batch % args.log_interval == 0 and batch > 0:
+        if i % args.log_interval == 0 and i > 0:
             cur_loss = total_loss / args.log_interval
             elapsed = time.time() - start_time
             printlog = '| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.5f} | ms/batch {:5.2f} | forward ms/batch {:5.2f} | loss {:5.2f} | ppl {:8.2f}'.format(
-                epoch, batch, len(train_data) // args.bptt, optimizer.param_groups[0]['lr'],
+                epoch, i, len(train_data) // args.bptt, optimizer.param_groups[0]['lr'],
                               elapsed * 1000 / args.log_interval, forward_elapsed_time * 1000 / args.log_interval,
                 cur_loss, math.exp(cur_loss))
             # print and save the log
@@ -340,6 +355,8 @@ try:
         global_epoch += 1
         epoch_start_time = time.time()
         train()
+        
+        continue
         val_loss = evaluate(val_data)
 
         print('-' * 89)

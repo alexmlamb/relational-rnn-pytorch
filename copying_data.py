@@ -1,6 +1,6 @@
 import numpy
 
-def copying_data(T, n_data, n_sequence, batch_size):
+def copying_data(T=80, n_data=300*64, n_sequence=10, batch_size=64):
     seq = numpy.random.randint(1, high=9, size=(n_data, n_sequence))
     zeros1 = numpy.zeros((n_data, T-1))
     zeros2 = numpy.zeros((n_data, T))
@@ -11,6 +11,10 @@ def copying_data(T, n_data, n_sequence, batch_size):
     y = numpy.concatenate((zeros3, zeros2, seq), axis=1).astype('int64')
     x = x.reshape(x.shape[0] // batch_size, batch_size, x.shape[1])
     y = y.reshape(y.shape[0] // batch_size, batch_size, y.shape[1])
+
+    x = numpy.swapaxes(x, 1,2).astype('int64')
+    y = numpy.swapaxes(y, 1,2).astype('int64')
+
     return x, y
 
 T = 80
