@@ -17,7 +17,7 @@ T = 40
 n_train = 20
 n_test = 20
 n_sequence = 10
-batch_size = 1
+batch_size = 2
 
 
 if __name__ == "__main__":
@@ -27,6 +27,8 @@ if __name__ == "__main__":
     print('train x y shapes', train_x.shape)
     print(train_y.shape)
 
-    print(train_x[0,0])
-    print(train_y[0,0])
+    for j in range(0,2):
+        print(train_x[0,j])
+        print(train_y[0,j])
+    
 
