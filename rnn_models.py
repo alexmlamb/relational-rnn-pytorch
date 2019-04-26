@@ -2,6 +2,7 @@ import torch.nn as nn
 import torch
 from attention import MultiHeadAttention
 from layer_conn_attention import LayerConnAttention
+from BlockLSTM import BlockLSTM
 
 class RNNModel(nn.Module):
     """Container module with an encoder, a recurrent module, and a decoder."""
@@ -38,25 +39,19 @@ class RNNModel(nn.Module):
 
             if rnn_type in ['LSTM', 'GRU']:
                 rnn_type = str(rnn_type) + 'Cell'
-                rnn_modulelist = []
+                rnn_type = "BlockLSTM"
                 dropout_lst = []
+                blocklst = []
                 for i in range(nlayers):
-                    blocklst = []
-                    for block in range(num_blocks):
-                        if i == 0:
-                            blocklst.append(getattr(nn, rnn_type)(ninp, nhid//num_blocks))
-                        else:
-                            size = nhid//num_blocks
-                            if self.layer2layerskip:
-                                size += self.block_size
-                            blocklst.append(getattr(nn, rnn_type)(size, nhid//num_blocks))
-                    blocklst = nn.ModuleList(blocklst)
-                    rnn_modulelist.append(blocklst)
+                    if i == 0:
+                        blocklst.append(BlockLSTM(ninp, nhid, num_blocks))
+                    else:
+                        size = nhid
+                        blocklst.append(BlockLSTM(size, nhid, num_blocks))
                     dropout_lst.append(nn.Dropout(dropout))
 
                 print('number of layers', nlayers)
-                print('number of modules', len(rnn_modulelist))
-                self.rnn = nn.ModuleList(rnn_modulelist)
+                self.rnn = nn.ModuleList(blocklst)
                 self.dropout_lst = nn.ModuleList(dropout_lst)
             else:
                 raise ValueError("non-cudnn version of (RNNCell) is not implemented. use LSTM or GRU instead")
@@ -111,12 +106,11 @@ class RNNModel(nn.Module):
             new_hidden = [[], []]
             for idx_layer in range(0, self.nlayers):
                 #print('idx layer', idx_layer)
+                #print('hidden shape', hidden.shape)
                 output = []
                 #print('hidden shape', hidden[0].shape)
-                hx, cx = hidden[0][idx_layer], hidden[1][idx_layer]
+                hx, cx = hidden[0], hidden[1]
                 for idx_step in range(input.shape[0]):
-                    hxl = []
-                    cxl = []
 
                     if idx_layer == 0:
                         inp_use = layer_input[idx_step]
@@ -127,25 +121,27 @@ class RNNModel(nn.Module):
                         #inp_use,_,_ = self.layer_conn_att(hx.reshape((hx.shape[0], self.num_blocks, self.block_size)), inp_use, inp_use)
                         #inp_use = inp_use.reshape((inp_use.shape[0], self.nhid))
 
-                    for block in range(self.num_blocks):
+                    #for block in range(self.num_blocks):
                         #print('block', block)
                         
                         #print('layer input size', layer_input[idx_step].shape)
-
-                        if idx_layer == 0:
-                            inp_use_block = inp_use
-                        else:
+                    print('inp hx cx shapes', inp_use.shape, hx.shape, cx.shape)
+                    hx, cx = self.rnn[idx_layer](inp_use, hx, cx)
+                    #print('hx cx shapes', hx.shape, cx.shape)
+                    #    if idx_layer == 0:
+                    #        inp_use_block = inp_use
+                    #    else:
                             #print('inp use shape', inp_use.shape)a
-                            inp_use_block = inp_use[:,block*self.block_size : (block+1)*self.block_size]
+                    #        inp_use_block = inp_use[:,block*self.block_size : (block+1)*self.block_size]
 
-                            if self.layer2layerskip:
-                                inp_use_block = torch.cat([inp_use_block, layer_input[idx_step][:,block*self.block_size : (block+1)*self.block_size]], dim=1)
+                    #        if self.layer2layerskip:
+                    #            inp_use_block = torch.cat([inp_use_block, layer_input[idx_step][:,block*self.block_size : (block+1)*self.block_size]], dim=1)
 
-                        hx_b, cx_b = self.rnn[idx_layer][block](inp_use_block, (hx[:,block*self.block_size : (block+1)*self.block_size], cx[:,block*self.block_size : (block+1)*self.block_size]))
-                        hxl.append(hx_b)
-                        cxl.append(cx_b)
-                    hx = torch.cat(hxl,1)
-                    cx = torch.cat(cxl,1)
+                        #hx_b, cx_b = self.rnn[idx_layer][block](inp_use_block, (hx[:,block*self.block_size : (block+1)*self.block_size], cx[:,block*self.block_size : (block+1)*self.block_size]))
+                        #hxl.append(hx_b)
+                        #cxl.append(cx_b)
+                    #hx = torch.cat(hxl,1)
+                    #cx = torch.cat(cxl,1)
                     #print(hxl[0].sum(), hx[:,0:100].sum(), hx.reshape((64,3,100))[:,0,:].sum(), 'should be same')
                     #print('hx shape cx shape', hx.shape, cx.shape)
                     

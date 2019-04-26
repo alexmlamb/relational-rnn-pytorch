@@ -266,6 +266,7 @@ def train():
     start_time = time.time()
     ntokens = len(corpus.dictionary)
     hidden = model.init_hidden(args.batch_size)
+    print('calling train!')
     for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
         data, targets = get_batch(train_data, i)
 
@@ -280,6 +281,7 @@ def train():
         hidden = repackage_hidden(hidden)
         model.zero_grad()
 
+        print('calling model with shapes', data.shape, hidden.shape)
         output, hidden, extra_loss = model(data, hidden)
         if not args.adaptivesoftmax:
             #print('getting loss for output', output.shape, 'target shape', targets.shape)

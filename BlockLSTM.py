@@ -36,7 +36,7 @@ class BlockLSTM(nn.Module):
         assert nhid % k == 0
 
         self.k = k
-        self.lstm = nn.LSTM(ninp, nhid)
+        self.lstm = nn.LSTMCell(ninp, nhid)
         self.nhid = nhid
         self.ninp = ninp
 
@@ -68,18 +68,17 @@ if __name__ == "__main__":
 
     pl = Blocks.lstm.parameters()
 
-    inp = torch.randn(10,100,2)
-    h = torch.randn(1,100,3*2)
-    c = torch.randn(1,100,3*2)
+    inp = torch.randn(100,2)
+    h = torch.randn(100,3*2)
+    c = torch.randn(100,3*2)
 
     h2, c2 = Blocks(inp,h,c)
 
     L = h2.sum()**2
 
-    L.backward()
-    opt.step()
-    opt.zero_grad()
-    
+    #L.backward()
+    #opt.step()
+    #opt.zero_grad()
 
     pl = Blocks.lstm.parameters()
     for p in pl:
