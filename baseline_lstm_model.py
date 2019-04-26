@@ -12,6 +12,7 @@ class RNNModel(nn.Module):
         self.use_cudnn_version = use_cudnn_version
         self.drop = nn.Dropout(dropout)
         self.encoder = nn.Embedding(ntoken, ninp)
+        print("Number of layers", nlayers)
         if use_cudnn_version:
             if rnn_type in ['LSTM', 'GRU']:
                 self.rnn = getattr(nn, rnn_type)(ninp, nhid, nlayers, dropout=dropout)

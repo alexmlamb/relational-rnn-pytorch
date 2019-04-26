@@ -64,12 +64,13 @@ import torch.nn.functional as F
 class MultiHeadAttention(nn.Module):
     ''' Multi-Head Attention module '''
 
-    def __init__(self, n_head, d_model, d_k, d_v, dropout=0.1):
+    def __init__(self, n_head, d_model, d_k, d_v, dropout=0.1, skip_connection=True):
         super().__init__()
 
         self.n_head = n_head
         self.d_k = d_k
         self.d_v = d_v
+        self.skip_connection = skip_connection
 
         self.w_qs = nn.Linear(d_model, n_head * d_k)
         self.w_ks = nn.Linear(d_model, n_head * d_k)
@@ -123,12 +124,12 @@ class MultiHeadAttention(nn.Module):
 
         output = self.dropout(self.fc(output_init))
 
-        gate = F.sigmoid(self.gate_fc(output_init))
-
         #output = self.layer_norm(gate * output + (1 - gate) * residual)
         #output = gate * output + (1 - gate) * residual
 
-        output = residual + gate * F.tanh(output)
+        if self.skip_connection: 
+            gate = F.sigmoid(self.gate_fc(output_init))
+            output = residual + gate * F.tanh(output)
 
         #output
 

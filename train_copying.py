@@ -242,20 +242,21 @@ def get_batch(source, i):
     target = source[i + 1:i + 1 + seq_len].view(-1)
     return data, target
 
+x_val, y_val = copying_data(T=90)
 
 def evaluate(data_source):
     # Turn on evaluation mode which disables dropout.
     model.eval()
     total_loss = 0.
     ntokens = 20#len(corpus.dictionary)
-    hidden = model.init_hidden(eval_batch_size)
-    print('eval data source shape', data_source.shape)
+    hidden = model.init_hidden(64)
     with torch.no_grad():
-        for i in range(0, data_source.size(0) - 1, args.bptt):
-            data, targets = get_batch(data_source, i)
+        for i in range(x_val.shape[0]):
+            data = Variable(torch.from_numpy(x_val[i]).cuda())
+            targets = Variable(torch.from_numpy(y_val[i]).cuda())
             output, hidden,extra_loss = model(data, hidden)
             if not args.adaptivesoftmax:
-                loss = criterion(output.view(-1, ntokens), targets)
+                loss = criterion(output.view(-1, ntokens), targets.view(data.shape[0]*data.shape[1]))
             else:
                 _, loss = criterion_adaptive(output.view(-1, args.nhid), targets)
             total_loss += len(data) * loss.item()
@@ -295,9 +296,12 @@ def train():
 
         output, hidden, extra_loss = model(data, hidden)
         if not args.adaptivesoftmax:
-            print('getting loss for output', output.shape, 'target shape', targets.shape)
-            print('ntokens', ntokens)
-            loss = criterion(output.view(-1, ntokens), targets.view(100*64))
+            #print('getting loss for output', output.shape, 'target shape', targets.shape)
+            #print('ntokens', ntokens)
+            #print('input 1', data[:,1])
+            #print('target 1', targets[:,1])
+            #print('pred 1', output[:,1].max(1)[1])
+            loss = criterion(output.view(-1, ntokens), targets.view(data.shape[0]*data.shape[1]))
         else:
             raise Exception('not implemented')
             _, loss = criterion_adaptive(output.view(-1, args.nhid), targets)
@@ -356,7 +360,6 @@ try:
         epoch_start_time = time.time()
         train()
         
-        continue
         val_loss = evaluate(val_data)
 
         print('-' * 89)
@@ -368,6 +371,8 @@ try:
         print('-' * 89)
 
         scheduler.step(val_loss)
+
+        continue
 
         # Save the model if the validation loss is the best we've seen so far.
         # model_{} contains state_dict and other states, model_dump_{} contains all the dependencies for generate_rmc.py
