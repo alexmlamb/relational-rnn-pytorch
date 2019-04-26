@@ -44,6 +44,7 @@ class BlockLSTM(nn.Module):
         pl = self.lstm.parameters()
 
         for p in pl:
+            p = p.data
             if p.shape == torch.Size([self.nhid*4]):
                 pass
                 '''biases, don't need to change anything here'''
@@ -63,6 +64,7 @@ class BlockLSTM(nn.Module):
 if __name__ == "__main__":
 
     Blocks = BlockLSTM(2, 6, k=2)
+    opt = torch.optim.Adam(Blocks.parameters())
 
     pl = Blocks.lstm.parameters()
 
@@ -70,10 +72,16 @@ if __name__ == "__main__":
     h = torch.randn(1,100,3*2)
     c = torch.randn(1,100,3*2)
 
-    Blocks(inp,h,c)
+    h2, c2 = Blocks(inp,h,c)
 
-    raise Exception('done')
+    L = h2.sum()**2
 
+    L.backward()
+    opt.step()
+    opt.zero_grad()
+    
+
+    pl = Blocks.lstm.parameters()
     for p in pl:
         #print(p.shape)
         #print(torch.Size([Blocks.nhid*4]))
