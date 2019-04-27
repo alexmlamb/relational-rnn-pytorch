@@ -1,14 +1,14 @@
 import torch.nn as nn
 import torch
 from attention import MultiHeadAttention
-from layer_conn_attention import LayerConnAttention
+#from layer_conn_attention import LayerConnAttention
 from BlockLSTM import BlockLSTM
 
 class RNNModel(nn.Module):
     """Container module with an encoder, a recurrent module, and a decoder."""
 
     def __init__(self, rnn_type, ntoken, ninp, nhid, nlayers, dropout=0.5, tie_weights=False, use_cudnn_version=True,
-                 use_adaptive_softmax=False, cutoffs=None, num_blocks=5, layer2layerskip = True):
+                 use_adaptive_softmax=False, cutoffs=None, num_blocks=2, layer2layerskip = True):
         super(RNNModel, self).__init__()
         assert nhid == ninp
         assert ninp % num_blocks == 0
@@ -58,7 +58,7 @@ class RNNModel(nn.Module):
 
         if not use_adaptive_softmax:
             self.use_adaptive_softmax = use_adaptive_softmax
-            self.decoder = nn.Linear(nhid, ntoken)
+            self.decoder = nn.Linear(ninp, ntoken)
             # Optionally tie weights as in:
             # "Using the Output Embedding to Improve Language Models" (Press & Wolf 2016)
             # https://arxiv.org/abs/1608.05859
@@ -105,51 +105,33 @@ class RNNModel(nn.Module):
             layer_input = emb
             new_hidden = [[], []]
             for idx_layer in range(0, self.nlayers):
+                self.rnn[idx_layer].blockify_params()
                 #print('idx layer', idx_layer)
                 #print('hidden shape', hidden.shape)
                 output = []
                 #print('hidden shape', hidden[0].shape)
-                hx, cx = hidden[0], hidden[1]
+                hx, cx = hidden[0][idx_layer], hidden[1][idx_layer]
                 for idx_step in range(input.shape[0]):
 
-                    if idx_layer == 0:
-                        inp_use = layer_input[idx_step]
-                    else:
-                        #inp_use = layer_input[idx_step]#[:,block*self.block_size : (block+1)*self.block_size]
-                        inp_use = layer_input[idx_step]
-                        #inp_use = inp_use.reshape((inp_use.shape[0], self.num_blocks, self.block_size))
-                        #inp_use,_,_ = self.layer_conn_att(hx.reshape((hx.shape[0], self.num_blocks, self.block_size)), inp_use, inp_use)
-                        #inp_use = inp_use.reshape((inp_use.shape[0], self.nhid))
+                    #inp_use = layer_input[idx_step]
+                    #inp_use = inp_use.reshape((inp_use.shape[0], self.num_blocks, self.block_size))
+                    #inp_use,_,_ = self.layer_conn_att(hx.reshape((hx.shape[0], self.num_blocks, self.block_size)), inp_use, inp_use)
+                    #inp_use = inp_use.reshape((inp_use.shape[0], self.nhid))
 
-                    #for block in range(self.num_blocks):
-                        #print('block', block)
-                        
-                        #print('layer input size', layer_input[idx_step].shape)
-                    print('inp hx cx shapes', inp_use.shape, hx.shape, cx.shape)
-                    hx, cx = self.rnn[idx_layer](inp_use, hx, cx)
-                    #print('hx cx shapes', hx.shape, cx.shape)
-                    #    if idx_layer == 0:
-                    #        inp_use_block = inp_use
-                    #    else:
-                            #print('inp use shape', inp_use.shape)a
-                    #        inp_use_block = inp_use[:,block*self.block_size : (block+1)*self.block_size]
-
-                    #        if self.layer2layerskip:
-                    #            inp_use_block = torch.cat([inp_use_block, layer_input[idx_step][:,block*self.block_size : (block+1)*self.block_size]], dim=1)
-
-                        #hx_b, cx_b = self.rnn[idx_layer][block](inp_use_block, (hx[:,block*self.block_size : (block+1)*self.block_size], cx[:,block*self.block_size : (block+1)*self.block_size]))
-                        #hxl.append(hx_b)
-                        #cxl.append(cx_b)
-                    #hx = torch.cat(hxl,1)
-                    #cx = torch.cat(cxl,1)
-                    #print(hxl[0].sum(), hx[:,0:100].sum(), hx.reshape((64,3,100))[:,0,:].sum(), 'should be same')
-                    #print('hx shape cx shape', hx.shape, cx.shape)
+                    hx_new, cx_new = self.rnn[idx_layer](inp_use, hx, cx)
                     
                     #TODO: attention turned off if following lines commented
-                    hx = hx.reshape((hx.shape[0], self.num_blocks, self.block_size))
-                    hx,attn_out,extra_loss_att = self.mha(hx,hx,hx)
-                    hx = hx.reshape((hx.shape[0], self.nhid))
+                    if idx_step % 5 == 0:
+                        hx = hx.reshape((hx.shape[0], self.num_blocks, self.block_size))
+                        hx,attn_out,extra_loss_att = self.mha(hx,hx,hx)
+                        hx = hx.reshape((hx.shape[0], self.nhid))
+                    
                     #extra_loss += extra_loss_att
+
+                    #extra_loss += 0.0001 * torch.sum((hx - hx_new)**2) + 0.0001 * torch.sum((cx - cx_new)**2)
+
+                    hx = hx_new
+                    cx = cx_new
 
                     output.append(hx)
                 output = torch.stack(output)
@@ -162,8 +144,8 @@ class RNNModel(nn.Module):
             new_hidden[1] = torch.stack(new_hidden[1])
             hidden = tuple(new_hidden)
 
-        output = self.drop(output)
 
+        output = self.drop(output)
         
 
         if not self.use_adaptive_softmax:
@@ -176,7 +158,7 @@ class RNNModel(nn.Module):
 
     def init_hidden(self, bsz):
         weight = next(self.parameters())
-        if self.rnn_type == 'LSTM' or self.rnn_type == 'LSTMCell':
+        if self.rnn_type == 'LSTM' or self.rnn_type == 'LSTMCell' or self.rnn_type == "BlockLSTM":
             return (weight.new_zeros(self.nlayers, bsz, self.nhid),
                     weight.new_zeros(self.nlayers, bsz, self.nhid))
         else:

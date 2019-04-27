@@ -12,6 +12,7 @@ class RNNModel(nn.Module):
         self.use_cudnn_version = use_cudnn_version
         self.drop = nn.Dropout(dropout)
         self.encoder = nn.Embedding(ntoken, ninp)
+        print('Baseline LSTM Model')
         print("Number of layers", nlayers)
         if use_cudnn_version:
             if rnn_type in ['LSTM', 'GRU']:
@@ -83,6 +84,7 @@ class RNNModel(nn.Module):
                 hx, cx = hidden[0][int(idx_layer / 2)], hidden[1][int(idx_layer / 2)]
                 for idx_step in range(input.shape[0]):
                     hx, cx = self.rnn[idx_layer](layer_input[idx_step], (hx, cx))
+                    
                     output.append(hx)
                 output = torch.stack(output)
                 if idx_layer + 1 < self.nlayers:
@@ -93,6 +95,7 @@ class RNNModel(nn.Module):
             new_hidden[0] = torch.stack(new_hidden[0])
             new_hidden[1] = torch.stack(new_hidden[1])
             hidden = tuple(new_hidden)
+
 
         output = self.drop(output)
 

@@ -6,9 +6,10 @@ Data is assumed to come in [block1, block2, ..., block_n].
 
 
 '''
-
+import time
 import torch
 import torch.nn as nn
+from torch.autograd import grad, Variable
 
 '''
 Given an N x N matrix, and a grouping of size, set all elements off the block diagonal to 0.0
@@ -54,9 +55,13 @@ class BlockLSTM(nn.Module):
 
     def forward(self, input, h, c):
 
-        self.blockify_params()
+        #t0 = time.time()
+        #self.blockify_params()
+        #print(time.time() - t0, 'time to blockify')
 
+        #t0 = time.time()
         hnext, cnext = self.lstm(input, (h, c))
+        #print(time.time() - t0, 'time to rnn pass')
 
         return hnext, cnext
 
@@ -68,17 +73,21 @@ if __name__ == "__main__":
 
     pl = Blocks.lstm.parameters()
 
-    inp = torch.randn(100,2)
-    h = torch.randn(100,3*2)
-    c = torch.randn(100,3*2)
+    inp = Variable(torch.randn(1,2), requires_grad=True)
+    h = Variable(torch.randn(1,3*2), requires_grad=True)
+    c = Variable(torch.randn(1,3*2), requires_grad=True)
 
     h2, c2 = Blocks(inp,h,c)
 
-    L = h2.sum()**2
+    L = c2[0,5]
+
+    print(grad(L, h)[0])
 
     #L.backward()
     #opt.step()
     #opt.zero_grad()
+
+    raise Exception('done')
 
     pl = Blocks.lstm.parameters()
     for p in pl:

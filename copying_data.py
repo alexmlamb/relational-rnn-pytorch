@@ -1,7 +1,7 @@
 import numpy
 
 
-def copying_data(T=40, n_data=300*64, n_sequence=5, batch_size=64):
+def copying_data(T=10, n_data=300*64, n_sequence=5, batch_size=64):
     seq = numpy.random.randint(1, high=9, size=(n_data, n_sequence))
     zeros1 = numpy.zeros((n_data, T-1))
     zeros2 = numpy.zeros((n_data, T))

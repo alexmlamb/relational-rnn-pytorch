@@ -281,7 +281,7 @@ def train():
         hidden = repackage_hidden(hidden)
         model.zero_grad()
 
-        print('calling model with shapes', data.shape, hidden.shape)
+        #print('calling model with shapes', data.shape, hidden.shape)
         output, hidden, extra_loss = model(data, hidden)
         if not args.adaptivesoftmax:
             #print('getting loss for output', output.shape, 'target shape', targets.shape)
