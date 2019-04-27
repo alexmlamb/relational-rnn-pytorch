@@ -34,7 +34,7 @@ parser.add_argument('--nlayers', type=int, default=2,
                     help='number of layers')
 parser.add_argument('--lr', type=float, default=0.001,
                     help='initial learning rate')
-parser.add_argument('--clip', type=float, default=0.1,
+parser.add_argument('--clip', type=float, default=1,
                     help='gradient clipping')
 parser.add_argument('--epochs', type=int, default=100,
                     help='upper epoch limit')
@@ -158,7 +158,7 @@ savepath = os.path.join(os.getcwd(), folder_name)
 ###############################################################################
 
 ntokens = 20#len(corpus.dictionary)
-print("vocabulary size (ntokens): " + str(ntokens))
+#print("vocabulary size (ntokens): " + str(ntokens))
 if args.adaptivesoftmax:
     print("Adaptive Softmax is on: the performance depends on cutoff values. check if the cutoff is properly set")
     print("Cutoffs: " + str(args.cutoffs))
@@ -258,9 +258,34 @@ def evaluate(data_source):
                 loss = criterion(output.view(-1, ntokens), targets)
             else:
                 _, loss = criterion_adaptive(output.view(-1, args.nhid), targets)
-            total_loss += len(data) * loss.item()
+            total_loss += len(data) * loss#.item()
             hidden = repackage_hidden(hidden)
     return total_loss / len(data_source)
+
+
+def evaluate_(copy_x, copy_y):
+    # Turn on evaluation mode which disables dropout.
+    model.eval()
+    total_loss = 0.
+    ntokens = 20#len(corpus.dictionary)
+    hidden = model.init_hidden(args.batch_size)
+    num_batches = 200
+    with torch.no_grad():
+        for i in range(num_batches):
+            batch_ind = random.randint(0, num_batches-1)
+            data = Variable(torch.from_numpy(copy_x[batch_ind]).cuda())
+            targets = Variable(torch.from_numpy(copy_y[batch_ind]).cuda())
+            output, hidden,extra_loss = model(data, hidden)
+            if not args.adaptivesoftmax:
+                loss = criterion(output.view(-1, ntokens), targets.view(75*64))
+            else:
+                _, loss = criterion_adaptive(output.view(-1, args.nhid), targets)
+            total_loss += loss.item()
+            hidden = repackage_hidden(hidden)
+    return total_loss/200 #/ len(data_source)
+
+    
+
 
 
 def train():
@@ -273,6 +298,7 @@ def train():
     hidden = model.init_hidden(args.batch_size)
 
     copy_x, copy_y = copying_data()
+    eval_copy_x, eval_copy_y = copying_data(T=55)
     num_batches = 200
 
     for i in range(num_batches):
@@ -295,9 +321,9 @@ def train():
 
         output, hidden, extra_loss = model(data, hidden)
         if not args.adaptivesoftmax:
-            print('getting loss for output', output.shape, 'target shape', targets.shape)
-            print('ntokens', ntokens)
-            loss = criterion(output.view(-1, ntokens), targets.view(100*64))
+            #print('getting loss for output', output.shape, 'target shape', targets.shape)
+            #print('ntokens', ntokens)
+            loss = criterion(output.view(-1, ntokens), targets.view(50*64))
         else:
             raise Exception('not implemented')
             _, loss = criterion_adaptive(output.view(-1, args.nhid), targets)
@@ -333,6 +359,10 @@ def train():
             forward_start_time = time.time()
             forward_elapsed_time = 0.
 
+     
+        if i % args.log_interval == 0 and i > 0:
+             test_loss = evaluate_(eval_copy_x, eval_copy_y)
+             print("test loss is %d", test_loss)
 
 def export_onnx(path, batch_size, seq_len):
     print('The model is also exported in ONNX format at {}'.
@@ -396,6 +426,7 @@ except KeyboardInterrupt:
     print('Exiting from training early: loading checkpoint from the best epoch {}...'.format(best_epoch))
 
 # Load the best saved model.
+'''
 with open(os.path.join(savepath, "model_{}.pt".format(best_epoch)), 'rb') as f:
     checkpoint = torch.load(f)
     model.load_state_dict(checkpoint["state_dict"])
@@ -403,7 +434,7 @@ with open(os.path.join(savepath, "model_{}.pt".format(best_epoch)), 'rb') as f:
     # this makes them a continuous chunk, and will speed up forward pass
     if args.cudnn:
         model.rnn.flatten_parameters()
-
+'''
 # Run on test data.
 test_loss = evaluate(test_data)
 

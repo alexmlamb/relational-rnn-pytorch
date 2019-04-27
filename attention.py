@@ -16,7 +16,7 @@ class ScaledDotProductAttention(nn.Module):
         #self.dropout = nn.Dropout(attn_dropout)
         self.softmax = nn.Softmax(dim=2)
         #print('top 2 sparsity')
-        #self.sa = Sparse_attention(top_k=2)
+        self.sa = Sparse_attention(top_k=2)
 
     def forward(self, q, k, v, mask=None):
 
@@ -42,7 +42,8 @@ class ScaledDotProductAttention(nn.Module):
         #    extra_loss += 0.0001 * ((attn[:,k,k] - 1.0)**2).sum()
         extra_loss = 0.0
 
-        use_sparse = False
+        use_sparse = True#False
+        #use_sparse = False
 
         if use_sparse:
             mb, ins, outs = attn.shape[0], attn.shape[1], attn.shape[2]

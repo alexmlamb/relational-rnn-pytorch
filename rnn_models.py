@@ -7,7 +7,7 @@ class RNNModel(nn.Module):
     """Container module with an encoder, a recurrent module, and a decoder."""
 
     def __init__(self, rnn_type, ntoken, ninp, nhid, nlayers, dropout=0.5, tie_weights=False, use_cudnn_version=True,
-                 use_adaptive_softmax=False, cutoffs=None, num_blocks=4):
+                 use_adaptive_softmax=False, cutoffs=None, num_blocks=5):
         super(RNNModel, self).__init__()
         self.use_cudnn_version = use_cudnn_version
         self.drop = nn.Dropout(dropout)
