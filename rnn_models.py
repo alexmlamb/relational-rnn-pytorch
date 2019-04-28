@@ -31,7 +31,7 @@ class RNNModel(nn.Module):
                 self.rnn = nn.RNN(ninp, nhid, nlayers, nonlinearity=nonlinearity, dropout=dropout)
         else:
             #tried reducing size
-            self.mha = MultiHeadAttention(n_head=4, d_model=self.block_size, d_k=16, d_v=16)
+            self.mha = MultiHeadAttention(n_head=4, d_model=self.block_size, d_k=16, d_v=16, num_blocks=num_blocks)
             self.fan_in = 2
             self.layer_conn_att = LayerConnAttention(n_head=4*self.fan_in, d_model=self.block_size, d_k=self.block_size, d_v=self.block_size, d_out=nhid*self.fan_in)
 

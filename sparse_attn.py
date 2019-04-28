@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import numpy
 
-
 class Sparse_attention(nn.Module):
     def __init__(self, top_k = 5):
         super(Sparse_attention,self).__init__()
@@ -40,6 +39,7 @@ class Sparse_attention(nn.Module):
         attn_w_sum = attn_w_sum + eps 
         attn_w_normalize = attn_w / attn_w_sum.repeat(1, time_step)
         return attn_w_normalize
+
 
 if __name__ == "__main__":
     k = 1

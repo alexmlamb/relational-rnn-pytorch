@@ -6,17 +6,20 @@ import numpy as np
 import random
 from sparse_attn import Sparse_attention
 import torch.nn.functional as F
+from GroupLinearLayer import GroupLinearLayer
+from sparse_grad_attn import Sparse_grad_attention
 
 class ScaledDotProductAttention(nn.Module):
     ''' Scaled Dot-Product Attention '''
 
-    def __init__(self, temperature, attn_dropout=0.1):
+    def __init__(self, temperature, attn_dropout=0.0):
         super().__init__()
         self.temperature = temperature
         #self.dropout = nn.Dropout(attn_dropout)
         self.softmax = nn.Softmax(dim=2)
         #print('top 2 sparsity')
-        self.sa = Sparse_attention(top_k=2)
+        self.sa = Sparse_attention(top_k=2) #k=2
+        self.sga = Sparse_grad_attention(top_k=2)
 
     def forward(self, q, k, v, mask=None):
 
@@ -49,7 +52,8 @@ class ScaledDotProductAttention(nn.Module):
             mb, ins, outs = attn.shape[0], attn.shape[1], attn.shape[2]
             sparse_attn = attn.reshape((mb*ins, outs))
             #print('sparse attn shape 1', sparse_attn.shape)
-            sparse_attn = self.sa(sparse_attn)
+            sga = Sparse_grad_attention(2)
+            sparse_attn = sga(sparse_attn)
             sparse_attn = sparse_attn.reshape((mb,ins,outs))
             attn = sparse_attn*1.0
 
@@ -65,16 +69,21 @@ import torch.nn.functional as F
 class MultiHeadAttention(nn.Module):
     ''' Multi-Head Attention module '''
 
-    def __init__(self, n_head, d_model, d_k, d_v, dropout=0.1):
+    def __init__(self, n_head, d_model, d_k, d_v, num_blocks, dropout=0.0):
         super().__init__()
 
         self.n_head = n_head
         self.d_k = d_k
         self.d_v = d_v
 
+        self.GLN_qs = GroupLinearLayer(d_model, n_head * d_k, num_blocks)
+        self.GLN_ks = GroupLinearLayer(d_model, n_head * d_k, num_blocks)
+        self.GLN_vs = GroupLinearLayer(d_model, n_head * d_v, num_blocks)
+
         self.w_qs = nn.Linear(d_model, n_head * d_k)
         self.w_ks = nn.Linear(d_model, n_head * d_k)
         self.w_vs = nn.Linear(d_model, n_head * d_v)
+
         nn.init.normal_(self.w_qs.weight, mean=0, std=np.sqrt(2.0 / (d_model + d_k)))
         nn.init.normal_(self.w_ks.weight, mean=0, std=np.sqrt(2.0 / (d_model + d_k)))
         nn.init.normal_(self.w_vs.weight, mean=0, std=np.sqrt(2.0 / (d_model + d_v)))
@@ -103,9 +112,10 @@ class MultiHeadAttention(nn.Module):
 
         #print('q shape', q.shape)
 
-        q = self.w_qs(q).view(sz_b, len_q, n_head, d_k)
-        k = self.w_ks(k).view(sz_b, len_k, n_head, d_k)
-        v = self.w_vs(v).view(sz_b, len_v, n_head, d_v)
+        q = self.GLN_qs(q).view(sz_b, len_q, n_head, d_k)
+        #q = self.w_qs(q).view(sz_b, len_q, n_head, d_k)
+        k = self.GLN_ks(k).view(sz_b, len_k, n_head, d_k)
+        v = self.GLN_vs(v).view(sz_b, len_v, n_head, d_v)
         #v = v.view(sz_b, len_v, n_head, d_v)
 
         q = q.permute(2, 0, 1, 3).contiguous().view(-1, len_q, d_k) # (n*b) x lq x dk
