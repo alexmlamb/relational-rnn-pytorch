@@ -8,7 +8,7 @@ class RNNModel(nn.Module):
     """Container module with an encoder, a recurrent module, and a decoder."""
 
     def __init__(self, rnn_type, ntoken, ninp, nhid, nlayers, dropout=0.5, tie_weights=False, use_cudnn_version=True,
-                 use_adaptive_softmax=False, cutoffs=None, num_blocks=12):
+                 use_adaptive_softmax=False, cutoffs=None, num_blocks=6):
         super(RNNModel, self).__init__()
         self.use_cudnn_version = use_cudnn_version
         self.drop = nn.Dropout(dropout)
@@ -18,6 +18,8 @@ class RNNModel(nn.Module):
         self.nhid = nhid
         self.block_size = nhid // self.num_blocks
         print('number of blocks', self.num_blocks)
+
+        self.sigmoid = nn.Sigmoid()
         if use_cudnn_version:
             raise Exception('not defined')
             if rnn_type in ['LSTM', 'GRU']:
@@ -131,8 +133,11 @@ class RNNModel(nn.Module):
 
                     #print('layer, inp shape', idx_layer, inp_use.shape)
 
-                    hx, cx = self.block_lstm(inp_use, hx, cx)
-                    
+                    hx_new, cx_new = self.block_lstm(inp_use, hx, cx)
+
+                    hx = hx_new
+                    cx = cx_new
+
                     #print(hxl[0].sum(), hx[:,0:100].sum(), hx.reshape((64,3,100))[:,0,:].sum(), 'should be same')
                     #print('hx shape cx shape', hx.shape, cx.shape)
                     

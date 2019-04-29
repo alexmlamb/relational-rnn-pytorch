@@ -12,14 +12,14 @@ from sparse_grad_attn import Sparse_grad_attention
 class ScaledDotProductAttention(nn.Module):
     ''' Scaled Dot-Product Attention '''
 
-    def __init__(self, temperature, attn_dropout=0.0):
+    def __init__(self, temperature, attn_dropout=0.1):
         super().__init__()
         self.temperature = temperature
         #self.dropout = nn.Dropout(attn_dropout)
         self.softmax = nn.Softmax(dim=2)
         #print('top 2 sparsity')
-        self.sa = Sparse_attention(top_k=2) #k=2
-        self.sga = Sparse_grad_attention(top_k=2)
+        self.sa = Sparse_attention(top_k=3) #k=2
+        #self.sga = Sparse_grad_attention(top_k=2)
 
     def forward(self, q, k, v, mask=None):
 
@@ -52,8 +52,8 @@ class ScaledDotProductAttention(nn.Module):
             mb, ins, outs = attn.shape[0], attn.shape[1], attn.shape[2]
             sparse_attn = attn.reshape((mb*ins, outs))
             #print('sparse attn shape 1', sparse_attn.shape)
-            sga = Sparse_grad_attention(2)
-            sparse_attn = sga(sparse_attn)
+            #sga = Sparse_grad_attention(2)
+            sparse_attn = self.sa(sparse_attn)
             sparse_attn = sparse_attn.reshape((mb,ins,outs))
             attn = sparse_attn*1.0
 
@@ -69,7 +69,7 @@ import torch.nn.functional as F
 class MultiHeadAttention(nn.Module):
     ''' Multi-Head Attention module '''
 
-    def __init__(self, n_head, d_model, d_k, d_v, num_blocks, dropout=0.0):
+    def __init__(self, n_head, d_model, d_k, d_v, num_blocks, dropout=0.1):
         super().__init__()
 
         self.n_head = n_head
