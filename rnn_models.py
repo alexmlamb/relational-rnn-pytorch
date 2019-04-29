@@ -3,6 +3,7 @@ import torch
 from attention import MultiHeadAttention
 from layer_conn_attention import LayerConnAttention
 from BlockLSTM import BlockLSTM
+import random
 
 class RNNModel(nn.Module):
     """Container module with an encoder, a recurrent module, and a decoder."""
@@ -33,9 +34,9 @@ class RNNModel(nn.Module):
                 self.rnn = nn.RNN(ninp, nhid, nlayers, nonlinearity=nonlinearity, dropout=dropout)
         else:
             #tried reducing size
-            self.mha = MultiHeadAttention(n_head=4, d_model=self.block_size, d_k=16, d_v=16, num_blocks=num_blocks)
-            self.fan_in = 2
-            self.layer_conn_att = LayerConnAttention(n_head=4*self.fan_in, d_model=self.block_size, d_k=self.block_size, d_v=self.block_size, d_out=nhid*self.fan_in)
+            self.mha = MultiHeadAttention(n_head=1, d_model_read=self.block_size, d_model_write=self.block_size, d_model_out=self.block_size, d_k=16, d_v=16, num_blocks_read=num_blocks, num_blocks_write=num_blocks, topk=num_blocks, grad_sparse=False)
+
+            self.inp_att = MultiHeadAttention(n_head=1, d_model_read=self.block_size, d_model_write=self.nhid, d_model_out=self.nhid, d_k=16, d_v=16, num_blocks_read=num_blocks, num_blocks_write=2,residual=False, topk=num_blocks, grad_sparse=False)
 
             if rnn_type in ['LSTM', 'GRU']:
                 rnn_type = str(rnn_type) + 'Cell'
@@ -120,7 +121,18 @@ class RNNModel(nn.Module):
 
                     if idx_layer == 0:
                         inp_use = layer_input[idx_step]
-                        inp_use = inp_use.repeat(1,self.num_blocks)
+                        
+                        #inp_use = inp_use.repeat(1,self.num_blocks)
+                        
+                        #use attention here.  
+                        inp_use = inp_use.reshape((inp_use.shape[0], 1, self.nhid))
+                        inp_use = torch.cat([inp_use, torch.zeros_like(inp_use)], dim=1)
+                        inp_use, iatt, _ = self.inp_att(hx.reshape((hx.shape[0], self.num_blocks, self.block_size)), inp_use, inp_use)
+                        inp_use = inp_use.reshape((inp_use.shape[0], self.nhid*self.num_blocks))
+
+                        if random.uniform(0,1) < 0.0001:
+                            print('inp attention on step', input.shape[0], '(total steps)', idx_step, iatt[0])
+
                         #print('inp use shape', inp_use.shape)
                     else:
                         #inp_use = layer_input[idx_step]#[:,block*self.block_size : (block+1)*self.block_size]

@@ -38,6 +38,9 @@ class Sparse_attention(nn.Module):
         attn_w_sum = torch.sum(attn_w, dim = 1, keepdim=True)
         attn_w_sum = attn_w_sum + eps 
         attn_w_normalize = attn_w / attn_w_sum.repeat(1, time_step)
+
+        #print('attn', attn_w_normalize)
+
         return attn_w_normalize
 
 

@@ -12,19 +12,22 @@ from sparse_grad_attn import Sparse_grad_attention
 class ScaledDotProductAttention(nn.Module):
     ''' Scaled Dot-Product Attention '''
 
-    def __init__(self, temperature, attn_dropout=0.1):
+    def __init__(self, temperature, topk, grad_sparse, attn_dropout=0.1):
         super().__init__()
         self.temperature = temperature
         #self.dropout = nn.Dropout(attn_dropout)
         self.softmax = nn.Softmax(dim=2)
+        self.grad_sparse = grad_sparse
         #print('top 2 sparsity')
-        self.sa = Sparse_attention(top_k=3) #k=2
+        self.sa = Sparse_attention(top_k=topk) #k=2
         #self.sga = Sparse_grad_attention(top_k=2)
 
     def forward(self, q, k, v, mask=None):
 
         attn = torch.bmm(q, k.transpose(1, 2))
         attn = attn / self.temperature
+
+        #print('in forward attn shape', attn.shape)
 
         if mask is not None:
             attn = attn.masked_fill(mask, -np.inf)
@@ -48,14 +51,24 @@ class ScaledDotProductAttention(nn.Module):
         use_sparse = True#False
         #use_sparse = False
 
+        #if random.uniform(0,1) < 0.0001:
+        #    print('pre sparsity attn', attn.shape, attn)
+
         if use_sparse:
             mb, ins, outs = attn.shape[0], attn.shape[1], attn.shape[2]
             sparse_attn = attn.reshape((mb*ins, outs))
             #print('sparse attn shape 1', sparse_attn.shape)
             #sga = Sparse_grad_attention(2)
-            sparse_attn = self.sa(sparse_attn)
+            if self.grad_sparse:
+                sga = Sparse_grad_attention(self.topk)
+                sparse_attn = sga(sparse_attn)
+            else:
+                sparse_attn = self.sa(sparse_attn)
             sparse_attn = sparse_attn.reshape((mb,ins,outs))
             attn = sparse_attn*1.0
+
+        #print('post sparse', attn.shape)
+        #print('post sparse', attn)
 
         #print('attention 0', attn[0])
 
@@ -69,34 +82,37 @@ import torch.nn.functional as F
 class MultiHeadAttention(nn.Module):
     ''' Multi-Head Attention module '''
 
-    def __init__(self, n_head, d_model, d_k, d_v, num_blocks, dropout=0.1):
+    def __init__(self, n_head, d_model_read, d_model_write, d_model_out, d_k, d_v, num_blocks_read, num_blocks_write, topk, grad_sparse, residual=True, dropout=0.1):
         super().__init__()
 
         self.n_head = n_head
         self.d_k = d_k
         self.d_v = d_v
 
-        self.GLN_qs = GroupLinearLayer(d_model, n_head * d_k, num_blocks)
-        self.GLN_ks = GroupLinearLayer(d_model, n_head * d_k, num_blocks)
-        self.GLN_vs = GroupLinearLayer(d_model, n_head * d_v, num_blocks)
+        self.GLN_qs = GroupLinearLayer(d_model_read, n_head * d_k, num_blocks_read)
+        self.GLN_ks = GroupLinearLayer(d_model_write, n_head * d_k, num_blocks_write)
+        self.GLN_vs = GroupLinearLayer(d_model_write, n_head * d_v, num_blocks_write)
 
-        self.w_qs = nn.Linear(d_model, n_head * d_k)
-        self.w_ks = nn.Linear(d_model, n_head * d_k)
-        self.w_vs = nn.Linear(d_model, n_head * d_v)
+        self.residual = residual
 
-        nn.init.normal_(self.w_qs.weight, mean=0, std=np.sqrt(2.0 / (d_model + d_k)))
-        nn.init.normal_(self.w_ks.weight, mean=0, std=np.sqrt(2.0 / (d_model + d_k)))
-        nn.init.normal_(self.w_vs.weight, mean=0, std=np.sqrt(2.0 / (d_model + d_v)))
+        #self.w_qs = nn.Linear(d_model_read, n_head * d_k)
+        #self.w_ks = nn.Linear(d_model_write, n_head * d_k)
+        #self.w_vs = nn.Linear(d_model_write, n_head * d_v)
 
-        self.attention = ScaledDotProductAttention(temperature=np.power(d_k, 0.5))
-        self.layer_norm = nn.LayerNorm(d_model)
+        #nn.init.normal_(self.w_qs.weight, mean=0, std=np.sqrt(2.0 / (d_model + d_k)))
+        #nn.init.normal_(self.w_ks.weight, mean=0, std=np.sqrt(2.0 / (d_model + d_k)))
+        #nn.init.normal_(self.w_vs.weight, mean=0, std=np.sqrt(2.0 / (d_model + d_v)))
 
-        self.gate_fc = nn.Linear(n_head * d_v, d_model)
-        self.fc = nn.Linear(n_head * d_v, d_model)
+        self.attention = ScaledDotProductAttention(temperature=np.power(d_k, 0.5), topk=topk, grad_sparse=grad_sparse)
+        #self.layer_norm = nn.LayerNorm(d_model)
+
+        self.gate_fc = nn.Linear(n_head * d_v, d_model_out)
+        self.fc = nn.Linear(n_head * d_v, d_model_out)
         nn.init.xavier_normal_(self.fc.weight)
 
         self.dropout = nn.Dropout(dropout)
 
+        self.ln = nn.LayerNorm(d_model_out)
 
     def forward(self, q, k, v, mask=None):
 
@@ -141,7 +157,11 @@ class MultiHeadAttention(nn.Module):
         #output = self.layer_norm(gate * output + (1 - gate) * residual)
         #output = gate * output + (1 - gate) * residual
 
-        output = residual + gate * F.tanh(output)
+        if self.residual:
+            output = residual + gate * F.tanh(output)
+        else:
+            #output = self.ln(output)
+            pass
 
         #output
 
