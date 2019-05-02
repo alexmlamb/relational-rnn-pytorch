@@ -115,6 +115,7 @@ class RNNModel(nn.Module):
                 self.block_lstm.blockify_params()
                 #print('hidden shape', hidden[0].shape)
                 hx, cx = hidden[0][idx_layer], hidden[1][idx_layer]
+                print_rand = random.uniform(0,1)
                 for idx_step in range(input.shape[0]):
                     hxl = []
                     cxl = []
@@ -130,8 +131,23 @@ class RNNModel(nn.Module):
                         inp_use, iatt, _ = self.inp_att(hx.reshape((hx.shape[0], self.num_blocks, self.block_size)), inp_use, inp_use)
                         inp_use = inp_use.reshape((inp_use.shape[0], self.nhid*self.num_blocks))
 
-                        if random.uniform(0,1) < 0.0001:
+                        null_score = iatt.mean((0,1))[1]
+
+                        topkval = 3
+                        if print_rand < 0.0001:
                             print('inp attention on step', input.shape[0], '(total steps)', idx_step, iatt[0])
+                            print('iat shape', iatt.shape)
+                            #print('mask shape', mask.shape)
+                            #print('mask at 0', mask[0])
+                            print('iat summed', iatt.mean((0,1)))
+                            print('iat null_score', null_score)
+
+                        
+
+                        topk_mat = torch.topk(iatt[:,:,0], dim=1, k=topkval+1)[0][:,-1] #64 x 1
+                        topk_mat = topk_mat.reshape((inp_use.shape[0],1)).repeat(1,6) #64 x 6
+                        mask = torch.gt(iatt[:,:,0], topk_mat).float()
+                        mask = mask.reshape((inp_use.shape[0],6,1)).repeat((1,1,self.block_size)).reshape((inp_use.shape[0], 6*self.block_size))
 
                         #print('inp use shape', inp_use.shape)
                     else:
@@ -147,17 +163,20 @@ class RNNModel(nn.Module):
 
                     hx_new, cx_new = self.block_lstm(inp_use, hx, cx)
 
-                    hx = hx_new
-                    cx = cx_new
+                    #print('null score', null_score, 'above threshold on step', idx_step, 'out of', input.shape[0])
 
-                    #print(hxl[0].sum(), hx[:,0:100].sum(), hx.reshape((64,3,100))[:,0,:].sum(), 'should be same')
-                    #print('hx shape cx shape', hx.shape, cx.shape)
-                    
-                    #TODO: attention turned off if following lines commented
-                    hx = hx.reshape((hx.shape[0], self.num_blocks, self.block_size))
-                    hx,attn_out,extra_loss_att = self.mha(hx,hx,hx)
-                    hx = hx.reshape((hx.shape[0], self.nhid))
-                    extra_loss += extra_loss_att
+                    if True:
+                        hx_old = hx*1.0
+                        cx_old = cx*1.0
+
+
+                        hx_new = hx_new.reshape((hx_new.shape[0], self.num_blocks, self.block_size))
+                        hx_new,attn_out,extra_loss_att = self.mha(hx_new,hx_new,hx_new)
+                        hx_new = hx_new.reshape((hx_new.shape[0], self.nhid))
+                        extra_loss += extra_loss_att
+
+                        hx = mask*hx_new + (1-mask)*hx_old
+                        cx = mask*cx_new + (1-mask)*cx_old
 
                     output.append(hx)
                 output = torch.stack(output)
