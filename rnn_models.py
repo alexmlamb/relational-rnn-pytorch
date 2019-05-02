@@ -144,13 +144,13 @@ class RNNModel(nn.Module):
 
 
                         topk_mat = torch.topk(iatt[:,:,0], dim=1, k=topkval)[0][:,-1] #64 x 1
-                        topk_mat = topk_mat.reshape((inp_use.shape[0],1)).repeat(1,6) #64 x 6
+                        topk_mat = topk_mat.reshape((inp_use.shape[0],1)).repeat(1,self.num_blocks) #64 x num_blocks
                         mask = torch.gt(iatt[:,:,0], topk_mat - 0.01).float()
                         if print_rand < 0.001:
                             print('step', idx_step, 'out of', input.shape[0])
                             print('att at 0', iatt[0])
                             print('mask at 0', mask[0])
-                        mask = mask.reshape((inp_use.shape[0],6,1)).repeat((1,1,self.block_size)).reshape((inp_use.shape[0], 6*self.block_size))
+                        mask = mask.reshape((inp_use.shape[0],self.num_blocks,1)).repeat((1,1,self.block_size)).reshape((inp_use.shape[0], self.num_blocks*self.block_size))
                         
                         mask = mask.detach()
 
