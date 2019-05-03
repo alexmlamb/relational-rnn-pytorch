@@ -9,16 +9,20 @@ class RNNModel(nn.Module):
     """Container module with an encoder, a recurrent module, and a decoder."""
 
     def __init__(self, rnn_type, ntoken, ninp, nhid, nlayers, dropout=0.5, tie_weights=False, use_cudnn_version=True,
-                 use_adaptive_softmax=False, cutoffs=None, num_blocks=6):
+                 use_adaptive_softmax=False, cutoffs=None, discrete_input=True, num_blocks=6):
         super(RNNModel, self).__init__()
         self.use_cudnn_version = use_cudnn_version
         self.drop = nn.Dropout(dropout)
         print('number of inputs, ninp', ninp)
-        self.encoder = nn.Embedding(ntoken, ninp)
+        if discrete_input:
+            self.encoder = nn.Embedding(ntoken, ninp)
+        else:
+            self.encoder = nn.Linear(ntoken, ninp)
         self.num_blocks = num_blocks
         self.nhid = nhid
         self.block_size = nhid // self.num_blocks
         print('number of blocks', self.num_blocks)
+        self.discrete_input = discrete_input
 
         self.sigmoid = nn.Sigmoid()
         if use_cudnn_version:
@@ -103,6 +107,7 @@ class RNNModel(nn.Module):
         extra_loss = 0.0
 
         emb = self.drop(self.encoder(input))
+        
         if self.use_cudnn_version:
             output, hidden = self.rnn(emb, hidden)
         else:
@@ -133,8 +138,8 @@ class RNNModel(nn.Module):
 
                         null_score = iatt.mean((0,1))[1]
 
-                        topkval = 3
-                        if print_rand < 0.0001:
+                        topkval = 6
+                        if False and print_rand < 0.0001:
                             print('inp attention on step', input.shape[0], '(total steps)', idx_step, iatt[0])
                             print('iat shape', iatt.shape)
                             #print('mask shape', mask.shape)
@@ -146,7 +151,7 @@ class RNNModel(nn.Module):
                         topk_mat = torch.topk(iatt[:,:,0], dim=1, k=topkval)[0][:,-1] #64 x 1
                         topk_mat = topk_mat.reshape((inp_use.shape[0],1)).repeat(1,self.num_blocks) #64 x num_blocks
                         mask = torch.gt(iatt[:,:,0], topk_mat - 0.01).float()
-                        if print_rand < 0.001:
+                        if False and print_rand < 0.001:
                             print('step', idx_step, 'out of', input.shape[0])
                             print('att at 0', iatt[0])
                             print('mask at 0', mask[0])

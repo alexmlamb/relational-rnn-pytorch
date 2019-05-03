@@ -12,6 +12,12 @@ import pickle
 import data
 import rnn_models
 import baseline_lstm_model
+import random
+import torch.nn.functional as F
+
+from adding_data import adding_data
+#from copying_data import copying_data
+from torch.autograd import Variable
 
 # is it faster?
 torch.backends.cudnn.benchmark = True
@@ -30,7 +36,7 @@ parser.add_argument('--nlayers', type=int, default=1,
                     help='number of layers')
 parser.add_argument('--lr', type=float, default=0.001,
                     help='initial learning rate')
-parser.add_argument('--clip', type=float, default=0.1,
+parser.add_argument('--clip', type=float, default=1.0,
                     help='gradient clipping')
 parser.add_argument('--epochs', type=int, default=100,
                     help='upper epoch limit')
@@ -38,7 +44,7 @@ parser.add_argument('--batch_size', type=int, default=64, metavar='N',
                     help='batch size')
 parser.add_argument('--bptt', type=int, default=100,
                     help='sequence length')
-parser.add_argument('--dropout', type=float, default=0.5,
+parser.add_argument('--dropout', type=float, default=0.0,
                     help='dropout applied to layers (0 = no dropout)')
 parser.add_argument('--tied', default=False, action='store_true',
                     help='tie the word embedding and softmax weights')
@@ -153,8 +159,8 @@ savepath = os.path.join(os.getcwd(), folder_name)
 # Build the model
 ###############################################################################
 
-ntokens = len(corpus.dictionary)
-print("vocabulary size (ntokens): " + str(ntokens))
+ntokens = 2#len(corpus.dictionary)
+#print("vocabulary size (ntokens): " + str(ntokens))
 if args.adaptivesoftmax:
     print("Adaptive Softmax is on: the performance depends on cutoff values. check if the cutoff is properly set")
     print("Cutoffs: " + str(args.cutoffs))
@@ -162,8 +168,8 @@ if args.adaptivesoftmax:
         raise ValueError("the last element of cutoff list must be lower than vocab size of the dataset")
     criterion_adaptive = nn.AdaptiveLogSoftmaxWithLoss(args.nhid, ntokens, cutoffs=args.cutoffs).to(device)
 else:
-    criterion = nn.CrossEntropyLoss()
-
+    #criterion = nn.CrossEntropyLoss()
+    criterion = nn.MSELoss()
 
 if args.algo == "blocks": 
     rnn_mod = rnn_models.RNNModel
@@ -175,7 +181,7 @@ else:
 model = rnn_mod(args.model, ntokens, args.emsize, args.nhid,
                             args.nlayers, args.dropout, args.tied,
                             use_cudnn_version=args.cudnn, use_adaptive_softmax=args.adaptivesoftmax,
-                            cutoffs=args.cutoffs).to(device)
+                            cutoffs=args.cutoffs, discrete_input=False).to(device)
 
 total_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
 print("model built, total trainable params: " + str(total_params))
@@ -184,7 +190,7 @@ if not args.cudnn:
         "--cudnn is set to False. the model will use RNNCell with for loop, instead of cudnn-optimzed RNN API. Expect a minor slowdown.")
 
 optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
-scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=5)
+#scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', factor=0.5, patience=5)
 
 ###############################################################################
 # Load the model checkpoint if specified and restore the global & best epoch
@@ -202,7 +208,7 @@ if args.resume is not None:
     checkpoint = torch.load(loadpath)
     model.load_state_dict(checkpoint["state_dict"])
     optimizer.load_state_dict(checkpoint["optimizer"])
-    scheduler.load_state_dict(checkpoint["scheduler"])
+    #scheduler.load_state_dict(checkpoint["scheduler"])
     global_epoch = checkpoint["global_epoch"]
     best_epoch = checkpoint["best_epoch"]
 
@@ -243,8 +249,9 @@ def evaluate(data_source):
     # Turn on evaluation mode which disables dropout.
     model.eval()
     total_loss = 0.
-    ntokens = len(corpus.dictionary)
+    ntokens = 20#len(corpus.dictionary)
     hidden = model.init_hidden(eval_batch_size)
+    print('eval data source shape', data_source.shape)
     with torch.no_grad():
         for i in range(0, data_source.size(0) - 1, args.bptt):
             data, targets = get_batch(data_source, i)
@@ -253,9 +260,35 @@ def evaluate(data_source):
                 loss = criterion(output.view(-1, ntokens), targets)
             else:
                 _, loss = criterion_adaptive(output.view(-1, args.nhid), targets)
-            total_loss += len(data) * loss.item()
+            total_loss += len(data) * loss#.item()
             hidden = repackage_hidden(hidden)
     return total_loss / len(data_source)
+
+
+def evaluate_(copy_x, copy_y):
+    # Turn on evaluation mode which disables dropout.
+    model.eval()
+    total_loss = 0.
+    ntokens = 20#len(corpus.dictionary)
+    hidden = model.init_hidden(args.batch_size)
+    num_batches = 200
+    with torch.no_grad():
+        for i in range(num_batches):
+            batch_ind = random.randint(0, num_batches-1)
+            data = Variable(torch.from_numpy(copy_x[batch_ind]).cuda())
+            targets = Variable(torch.from_numpy(copy_y[batch_ind]).cuda())
+            output, hidden,extra_loss = model(data, hidden)
+            if not args.adaptivesoftmax:
+                #loss = criterion(output.view(-1, ntokens), targets.view(75*64))
+                loss = criterion(output[:,:,0], targets) * targets.shape[0]
+            else:
+                _, loss = criterion_adaptive(output.view(-1, args.nhid), targets)
+            total_loss += loss.item()
+            hidden = repackage_hidden(hidden)
+    return total_loss/num_batches #/ len(data_source)
+
+    
+
 
 
 def train():
@@ -264,10 +297,19 @@ def train():
     total_loss = 0.
     forward_elapsed_time = 0.
     start_time = time.time()
-    ntokens = len(corpus.dictionary)
+    ntokens = 2#len(corpus.dictionary)
     hidden = model.init_hidden(args.batch_size)
-    for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
-        data, targets = get_batch(train_data, i)
+
+    copy_x, copy_y = adding_data(T=20)
+    eval_copy_x, eval_copy_y = adding_data(T=50)
+    num_batches = 200
+
+    for i in range(num_batches):
+        batch_ind = random.randint(0, num_batches-1)
+
+        #data, targets = get_batch(train_data, i)
+        data = Variable(torch.from_numpy(copy_x[batch_ind]).cuda())
+        targets = Variable(torch.from_numpy(copy_y[batch_ind]).cuda())
 
         #print('input shape', data.shape)
         # synchronize cuda for a proper speed benchmark
@@ -282,9 +324,19 @@ def train():
 
         output, hidden, extra_loss = model(data, hidden)
         if not args.adaptivesoftmax:
-            #print('getting loss for output', output.shape, 'target shape', targets.shape)
-            loss = criterion(output.view(-1, ntokens), targets)
+            #print('ntokens', ntokens)
+            #print('output shape', output.shape)
+
+            if random.uniform(0,1) < 0.01:
+                print('target', targets[:,0])
+                print('output', output[:,0,0].data.cpu().numpy().round(3))
+
+            loss = criterion(output[:,:,0], targets) * targets.shape[0]
+            #print('output', output[:,0,0])
+            #print('loss', loss)
+            #loss = criterion(output.view(-1, ntokens), targets.view(50*64))
         else:
+            raise Exception('not implemented')
             _, loss = criterion_adaptive(output.view(-1, args.nhid), targets)
         total_loss += loss.item()
 
@@ -301,11 +353,11 @@ def train():
 
         optimizer.step()
 
-        if batch % args.log_interval == 0 and batch > 0:
+        if i % args.log_interval == 0 and i > 0:
             cur_loss = total_loss / args.log_interval
             elapsed = time.time() - start_time
             printlog = '| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.5f} | ms/batch {:5.2f} | forward ms/batch {:5.2f} | loss {:5.2f} | ppl {:8.2f}'.format(
-                epoch, batch, len(train_data) // args.bptt, optimizer.param_groups[0]['lr'],
+                epoch, i, len(train_data) // args.bptt, optimizer.param_groups[0]['lr'],
                               elapsed * 1000 / args.log_interval, forward_elapsed_time * 1000 / args.log_interval,
                 cur_loss, math.exp(cur_loss))
             # print and save the log
@@ -318,6 +370,10 @@ def train():
             forward_start_time = time.time()
             forward_elapsed_time = 0.
 
+     
+        if i % args.log_interval == 0 and i > 0:
+             test_loss = evaluate_(eval_copy_x, eval_copy_y)
+             print("test loss is %d", test_loss)
 
 def export_onnx(path, batch_size, seq_len):
     print('The model is also exported in ONNX format at {}'.
@@ -340,6 +396,8 @@ try:
         global_epoch += 1
         epoch_start_time = time.time()
         train()
+        
+        continue
         val_loss = evaluate(val_data)
 
         print('-' * 89)
@@ -350,7 +408,7 @@ try:
         logger_test.flush()
         print('-' * 89)
 
-        scheduler.step(val_loss)
+        #scheduler.step(val_loss)
 
         # Save the model if the validation loss is the best we've seen so far.
         # model_{} contains state_dict and other states, model_dump_{} contains all the dependencies for generate_rmc.py
@@ -364,10 +422,9 @@ try:
             torch.save(model, os.path.join(savepath, "model_dump_{}.pt".format(global_epoch)))
             with open(os.path.join(savepath, "model_{}.pt".format(global_epoch)), 'wb') as f:
                 optimizer_state = optimizer.state_dict()
-                scheduler_state = scheduler.state_dict()
+                #scheduler_state = scheduler.state_dict()
                 torch.save({"state_dict": model.state_dict(),
                             "optimizer": optimizer_state,
-                            "scheduler": scheduler_state,
                             "global_epoch": global_epoch,
                             "best_epoch": best_epoch}, f)
             best_val_loss = val_loss
@@ -379,6 +436,7 @@ except KeyboardInterrupt:
     print('Exiting from training early: loading checkpoint from the best epoch {}...'.format(best_epoch))
 
 # Load the best saved model.
+'''
 with open(os.path.join(savepath, "model_{}.pt".format(best_epoch)), 'rb') as f:
     checkpoint = torch.load(f)
     model.load_state_dict(checkpoint["state_dict"])
@@ -386,7 +444,7 @@ with open(os.path.join(savepath, "model_{}.pt".format(best_epoch)), 'rb') as f:
     # this makes them a continuous chunk, and will speed up forward pass
     if args.cudnn:
         model.rnn.flatten_parameters()
-
+'''
 # Run on test data.
 test_loss = evaluate(test_data)
 
