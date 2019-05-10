@@ -9,7 +9,7 @@ class RNNModel(nn.Module):
     """Container module with an encoder, a recurrent module, and a decoder."""
 
     def __init__(self, rnn_type, ntoken, ninp, nhid, nlayers, dropout=0.5, tie_weights=False, use_cudnn_version=True,
-                 use_adaptive_softmax=False, cutoffs=None, discrete_input=True, num_blocks=6):
+                 use_adaptive_softmax=False, cutoffs=None, discrete_input=True, num_blocks=12):
         super(RNNModel, self).__init__()
         self.use_cudnn_version = use_cudnn_version
         self.drop = nn.Dropout(dropout)
@@ -38,9 +38,9 @@ class RNNModel(nn.Module):
                 self.rnn = nn.RNN(ninp, nhid, nlayers, nonlinearity=nonlinearity, dropout=dropout)
         else:
             #tried reducing size
-            self.mha = MultiHeadAttention(n_head=1, d_model_read=self.block_size, d_model_write=self.block_size, d_model_out=self.block_size, d_k=16, d_v=16, num_blocks_read=num_blocks, num_blocks_write=num_blocks, topk=num_blocks, grad_sparse=False)
+            self.mha = MultiHeadAttention(n_head=1, d_model_read=self.block_size, d_model_write=self.block_size, d_model_out=self.block_size, d_k=32, d_v=32, num_blocks_read=num_blocks, num_blocks_write=num_blocks, topk=num_blocks, grad_sparse=False)
 
-            self.inp_att = MultiHeadAttention(n_head=1, d_model_read=self.block_size, d_model_write=self.nhid, d_model_out=self.nhid, d_k=16, d_v=16, num_blocks_read=num_blocks, num_blocks_write=2,residual=False, topk=num_blocks, grad_sparse=False)
+            self.inp_att = MultiHeadAttention(n_head=1, d_model_read=self.block_size, d_model_write=self.nhid, d_model_out=self.nhid, d_k=32, d_v=32, num_blocks_read=num_blocks, num_blocks_write=2,residual=False, topk=num_blocks, grad_sparse=False)
 
             if rnn_type in ['LSTM', 'GRU']:
                 rnn_type = str(rnn_type) + 'Cell'
@@ -138,7 +138,7 @@ class RNNModel(nn.Module):
 
                         null_score = iatt.mean((0,1))[1]
 
-                        topkval = 6
+                        topkval = 9
                         if False and print_rand < 0.0001:
                             print('inp attention on step', input.shape[0], '(total steps)', idx_step, iatt[0])
                             print('iat shape', iatt.shape)

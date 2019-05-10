@@ -12,6 +12,12 @@ import pickle
 import data
 import rnn_models
 import baseline_lstm_model
+import random
+
+
+#from copying_data import copying_data
+from execution_data import execution_data
+from torch.autograd import Variable
 
 # is it faster?
 torch.backends.cudnn.benchmark = True
@@ -28,9 +34,9 @@ parser.add_argument('--nhid', type=int, default=300,
                     help='number of hidden units per layer')
 parser.add_argument('--nlayers', type=int, default=1,
                     help='number of layers')
-parser.add_argument('--lr', type=float, default=0.001,
+parser.add_argument('--lr', type=float, default=0.0001,
                     help='initial learning rate')
-parser.add_argument('--clip', type=float, default=0.1,
+parser.add_argument('--clip', type=float, default=1,
                     help='gradient clipping')
 parser.add_argument('--epochs', type=int, default=100,
                     help='upper epoch limit')
@@ -38,9 +44,9 @@ parser.add_argument('--batch_size', type=int, default=64, metavar='N',
                     help='batch size')
 parser.add_argument('--bptt', type=int, default=100,
                     help='sequence length')
-parser.add_argument('--dropout', type=float, default=0.5,
+parser.add_argument('--dropout', type=float, default=0.0,
                     help='dropout applied to layers (0 = no dropout)')
-parser.add_argument('--tied', default=True, action='store_true',
+parser.add_argument('--tied', default=False, action='store_true',
                     help='tie the word embedding and softmax weights')
 parser.add_argument('--seed', type=int, default=1111,
                     help='random seed')
@@ -75,13 +81,13 @@ args = parser.parse_args()
 print("Tied?", args.tied)
 
 # Set the random seed manually for reproducibility.
-#torch.manual_seed(args.seed)
+torch.manual_seed(args.seed)
 
 if torch.cuda.is_available():
     if not args.cuda:
         print("WARNING: You have a CUDA device, so you should probably run with --cuda")
 
-device = torch.device("cuda:1" if args.cuda else "cpu")
+device = torch.device("cuda" if args.cuda else "cpu")
 ###############################################################################
 # Load data
 ###############################################################################
@@ -153,8 +159,8 @@ savepath = os.path.join(os.getcwd(), folder_name)
 # Build the model
 ###############################################################################
 
-ntokens = len(corpus.dictionary)
-print("vocabulary size (ntokens): " + str(ntokens))
+ntokens = 25#len(corpus.dictionary)
+#print("vocabulary size (ntokens): " + str(ntokens))
 if args.adaptivesoftmax:
     print("Adaptive Softmax is on: the performance depends on cutoff values. check if the cutoff is properly set")
     print("Cutoffs: " + str(args.cutoffs))
@@ -243,8 +249,9 @@ def evaluate(data_source):
     # Turn on evaluation mode which disables dropout.
     model.eval()
     total_loss = 0.
-    ntokens = len(corpus.dictionary)
+    ntokens = 25#len(corpus.dictionary)
     hidden = model.init_hidden(eval_batch_size)
+    print('eval data source shape', data_source.shape)
     with torch.no_grad():
         for i in range(0, data_source.size(0) - 1, args.bptt):
             data, targets = get_batch(data_source, i)
@@ -253,9 +260,37 @@ def evaluate(data_source):
                 loss = criterion(output.view(-1, ntokens), targets)
             else:
                 _, loss = criterion_adaptive(output.view(-1, args.nhid), targets)
-            total_loss += len(data) * loss.item()
+            total_loss += len(data) * loss#.item()
             hidden = repackage_hidden(hidden)
     return total_loss / len(data_source)
+
+
+def evaluate_():
+    # Turn on evaluation mode which disables dropout.
+    model.eval()
+    total_loss = 0.
+    ntokens = 25#len(corpus.dictionary)
+    hidden = model.init_hidden(args.batch_size)
+    num_batches = 200
+    with torch.no_grad():
+        for i in range(num_batches):
+            #batch_ind = random.randint(0, num_batches-1)
+            
+            x,y = execution_data()
+            
+            data = Variable(torch.from_numpy(x).cuda())
+            targets = Variable(torch.from_numpy(y).cuda())
+            output, hidden,extra_loss = model(data, hidden)
+            if not args.adaptivesoftmax:
+                loss = criterion(output.view(-1, ntokens), targets.view(targets.shape[0]*targets.shape[1]))
+            else:
+                _, loss = criterion_adaptive(output.view(-1, args.nhid), targets)
+            total_loss += loss.item()
+            hidden = repackage_hidden(hidden)
+    return total_loss/200 #/ len(data_source)
+
+    
+
 
 
 def train():
@@ -264,14 +299,25 @@ def train():
     total_loss = 0.
     forward_elapsed_time = 0.
     start_time = time.time()
-    ntokens = len(corpus.dictionary)
+    ntokens = 25#len(corpus.dictionary)
     hidden = model.init_hidden(args.batch_size)
-    for batch, i in enumerate(range(0, train_data.size(0) - 1, args.bptt)):
-        data, targets = get_batch(train_data, i)
+
+    #copy_x, copy_y = copying_data()
+    #eval_copy_x, eval_copy_y = copying_data(T=55)
+    num_batches = 200
+
+    for i in range(num_batches):
+        batch_ind = random.randint(0, num_batches-1)
+
+        x,y = execution_data()
+
+        #data, targets = get_batch(train_data, i)
+        data = Variable(torch.from_numpy(x).cuda())
+        targets = Variable(torch.from_numpy(y).cuda())
 
         #print('input shape', data.shape)
         # synchronize cuda for a proper speed benchmark
-        #torch.cuda.synchronize()
+        torch.cuda.synchronize()
 
         # Starting each batch, we detach the hidden state from how it was previously produced.
         # If we didn't, the model would try backpropagating all the way to start of the dataset.
@@ -283,13 +329,16 @@ def train():
         output, hidden, extra_loss = model(data, hidden)
         if not args.adaptivesoftmax:
             #print('getting loss for output', output.shape, 'target shape', targets.shape)
-            loss = criterion(output.view(-1, ntokens), targets)
+            #print('ntokens', ntokens)
+            
+            loss = criterion(output.view(-1, ntokens), targets.view(targets.shape[0]*targets.shape[1]))
         else:
+            raise Exception('not implemented')
             _, loss = criterion_adaptive(output.view(-1, args.nhid), targets)
         total_loss += loss.item()
 
         # synchronize cuda for a proper speed benchmark
-        #torch.cuda.synchronize()
+        torch.cuda.synchronize()
 
         forward_elapsed = time.time() - forward_start_time
         forward_elapsed_time += forward_elapsed
@@ -301,11 +350,11 @@ def train():
 
         optimizer.step()
 
-        if batch % args.log_interval == 0 and batch > 0:
+        if i % args.log_interval == 0 and i > 0:
             cur_loss = total_loss / args.log_interval
             elapsed = time.time() - start_time
             printlog = '| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.5f} | ms/batch {:5.2f} | forward ms/batch {:5.2f} | loss {:5.2f} | ppl {:8.2f}'.format(
-                epoch, batch, len(train_data) // args.bptt, optimizer.param_groups[0]['lr'],
+                epoch, i, len(train_data) // args.bptt, optimizer.param_groups[0]['lr'],
                               elapsed * 1000 / args.log_interval, forward_elapsed_time * 1000 / args.log_interval,
                 cur_loss, math.exp(cur_loss))
             # print and save the log
@@ -318,6 +367,10 @@ def train():
             forward_start_time = time.time()
             forward_elapsed_time = 0.
 
+     
+        if i % args.log_interval == 0 and i > 0:
+             test_loss = evaluate_()
+             print("test loss is %d", test_loss)
 
 def export_onnx(path, batch_size, seq_len):
     print('The model is also exported in ONNX format at {}'.
@@ -340,6 +393,8 @@ try:
         global_epoch += 1
         epoch_start_time = time.time()
         train()
+        
+        continue
         val_loss = evaluate(val_data)
 
         print('-' * 89)
@@ -361,15 +416,15 @@ try:
             except FileNotFoundError:
                 pass
             best_epoch = global_epoch
-            #torch.save(model, os.path.join(savepath, "model_dump_{}.pt".format(global_epoch)))
-            #with open(os.path.join(savepath, "model_{}.pt".format(global_epoch)), 'wb') as f:
-            #    optimizer_state = optimizer.state_dict()
-            #    scheduler_state = scheduler.state_dict()
-            #    torch.save({"state_dict": model.state_dict(),
-            #                "optimizer": optimizer_state,
-            #                "scheduler": scheduler_state,
-            #                "global_epoch": global_epoch,
-            #                "best_epoch": best_epoch}, f)
+            torch.save(model, os.path.join(savepath, "model_dump_{}.pt".format(global_epoch)))
+            with open(os.path.join(savepath, "model_{}.pt".format(global_epoch)), 'wb') as f:
+                optimizer_state = optimizer.state_dict()
+                scheduler_state = scheduler.state_dict()
+                torch.save({"state_dict": model.state_dict(),
+                            "optimizer": optimizer_state,
+                            "scheduler": scheduler_state,
+                            "global_epoch": global_epoch,
+                            "best_epoch": best_epoch}, f)
             best_val_loss = val_loss
         else:
             pass
@@ -379,14 +434,15 @@ except KeyboardInterrupt:
     print('Exiting from training early: loading checkpoint from the best epoch {}...'.format(best_epoch))
 
 # Load the best saved model.
-#with open(os.path.join(savepath, "model_{}.pt".format(best_epoch)), 'rb') as f:
-#    checkpoint = torch.load(f)
-#    model.load_state_dict(checkpoint["state_dict"])
+'''
+with open(os.path.join(savepath, "model_{}.pt".format(best_epoch)), 'rb') as f:
+    checkpoint = torch.load(f)
+    model.load_state_dict(checkpoint["state_dict"])
     # after load the rnn params are not a continuous chunk of memory
     # this makes them a continuous chunk, and will speed up forward pass
-#    if args.cudnn:
-#        model.rnn.flatten_parameters()
-
+    if args.cudnn:
+        model.rnn.flatten_parameters()
+'''
 # Run on test data.
 test_loss = evaluate(test_data)
 
