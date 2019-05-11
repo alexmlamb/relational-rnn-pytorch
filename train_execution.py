@@ -276,8 +276,10 @@ def evaluate_():
         for i in range(num_batches):
             #batch_ind = random.randint(0, num_batches-1)
             
-            x,y = execution_data()
-            
+            exp_length = random.randint(6,6)
+            answer_length = 1
+            x,y = execution_data(expression_length=exp_length, answer_length=answer_length)
+
             data = Variable(torch.from_numpy(x).cuda())
             targets = Variable(torch.from_numpy(y).cuda())
             output, hidden,extra_loss = model(data, hidden)
@@ -309,7 +311,11 @@ def train():
     for i in range(num_batches):
         batch_ind = random.randint(0, num_batches-1)
 
-        x,y = execution_data()
+        exp_length = random.randint(1,3)
+        answer_length = random.randint(1,1)
+        x,y = execution_data(exp_length, answer_length)
+
+        #print('xy shape', x.shape, y.shape)
 
         #data, targets = get_batch(train_data, i)
         data = Variable(torch.from_numpy(x).cuda())
@@ -353,7 +359,7 @@ def train():
         if i % args.log_interval == 0 and i > 0:
             cur_loss = total_loss / args.log_interval
             elapsed = time.time() - start_time
-            printlog = '| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.5f} | ms/batch {:5.2f} | forward ms/batch {:5.2f} | loss {:5.2f} | ppl {:8.2f}'.format(
+            printlog = '| epoch {:3d} | {:5d}/{:5d} batches | lr {:02.5f} | ms/batch {:5.2f} | forward ms/batch {:5.2f} | loss {:5.4f} | ppl {:8.2f}'.format(
                 epoch, i, len(train_data) // args.bptt, optimizer.param_groups[0]['lr'],
                               elapsed * 1000 / args.log_interval, forward_elapsed_time * 1000 / args.log_interval,
                 cur_loss, math.exp(cur_loss))

@@ -9,7 +9,7 @@ class RNNModel(nn.Module):
     """Container module with an encoder, a recurrent module, and a decoder."""
 
     def __init__(self, rnn_type, ntoken, ninp, nhid, nlayers, dropout=0.5, tie_weights=False, use_cudnn_version=True,
-                 use_adaptive_softmax=False, cutoffs=None, discrete_input=True, num_blocks=12):
+                 use_adaptive_softmax=False, cutoffs=None, discrete_input=True, num_blocks=6):
         super(RNNModel, self).__init__()
         self.use_cudnn_version = use_cudnn_version
         self.drop = nn.Dropout(dropout)
@@ -138,7 +138,7 @@ class RNNModel(nn.Module):
 
                         null_score = iatt.mean((0,1))[1]
 
-                        topkval = 9
+                        topkval = 3
                         if False and print_rand < 0.0001:
                             print('inp attention on step', input.shape[0], '(total steps)', idx_step, iatt[0])
                             print('iat shape', iatt.shape)

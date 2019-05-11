@@ -167,23 +167,21 @@ class setup_math_expressions(object):
  
 n_valid = 64
 n_test = 11
-expression_length = 2
-answer_length = 1
 sequential_answer=True
 require_positive = True
 
 
-data = setup_math_expressions(n_valid=n_valid,
-                                  n_test=n_test,
-                                  expression_length=expression_length,
-                                  answer_length=answer_length,
-                                  sequential_answer=sequential_answer,
-                                  require_positive=require_positive,
-                                  rng=None)
+#data = setup_math_expressions(n_valid=n_valid,
+#                                  n_test=n_test,
+#                                  expression_length=expression_length,
+#                                  answer_length=answer_length,
+#                                  sequential_answer=sequential_answer,
+#                                  require_positive=require_positive,
+#                                  rng=None)
 
-data_valid = data.get_validation()
-data_test  = data.get_testing()
-vocabulary = data.get_vocabulary()
+#data_valid = data.get_validation()
+#data_test  = data.get_testing()
+#vocabulary = data.get_vocabulary()
 #max_len_all = len(data_valid['input'][0])
 #max_len_ans = len(data_valid['target'][0])
 
@@ -194,7 +192,7 @@ vocabulary = data.get_vocabulary()
 #print('min max', data_valid[0][0].min(), data_valid[0][0].max())
 
 
-def execution_data():
+def execution_data(expression_length, answer_length):
 
     data = setup_math_expressions(n_valid=n_valid,
                 n_test=n_test,
@@ -222,38 +220,19 @@ def execution_data():
     return x,y
 
 
-for k in range(0,3):
-    x,y = execution_data()
+#for k in range(0,3):
+#    x,y = execution_data()
 
-    print('xs', x.shape)
-    print(x[:,0], y[:,0])
+#    print('xs', x.shape)
+#    print(x[:,0], y[:,0])
 
 if __name__ == "__main__":
 
     print('main func')
     
-    # Setup data iterators.
-    def data_iter_train():
-        for i in range(args.epoch_length):
-            batch = data.get_training_batch(args.n_batch)
-            yield batch
-    def data_iter_valid():
-        for i in range(0, len(data_valid[0]), args.n_batch):
-            indices = slice(i, i+args.n_batch)
-            batch = dict([(key, val[indices])
-                          for key, val in data_valid.items()])
-            yield batch
-    def data_iter_test():
-        for i in range(0, len(data_test[0]), args.n_batch):
-            indices = slice(i, i+args.n_batch)
-            batch = dict([(key, val[indices])
-                          for key, val in data_valid.items()])
-            yield batch
+    exp_len = 2
+    x,y = execution_data(exp_len,2)
 
-    # Set up RNN.
-    tmax = None if not args.chrono_init else max_len_all
-    vocabulary_size = len(vocabulary)
-    embedding_size = vocabulary_size
-
+    print(x.shape, y.shape)
 
 
